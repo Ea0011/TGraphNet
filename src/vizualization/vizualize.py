@@ -44,7 +44,7 @@ def plot_node_to_edge_map(T, num_frames=3, annotate_frames=True, node_names=[], 
         cbar=None,
         linewidth=.5,
         square=True)
-    
+
     if annotate_frames:
         for i in range(num_frames):
             node_frame = (i * num_nodes)

@@ -21,6 +21,7 @@ from data.h36m_dataset import Human36M
 from common.h36m_skeleton import joint_id_to_names
 from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, eval_data_prepare
 import loss
+from common.utils import change_momentum
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -63,15 +64,16 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
     for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in train_gen.next_epoch():
         input_2d = torch.FloatTensor(batch_2d).to(device)
         input_edge = torch.FloatTensor(batch_edge).to(device)
-        target_pose_3d = torch.FloatTensor(batch_3d).to(device).reshape(-1, 17, 3)
-        target_angle_6d = torch.FloatTensor(batch_6d).to(device).reshape(-1, 16, 6)
+        target_pose_3d = torch.FloatTensor(batch_3d).to(device)
+        target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
         predicted_pos3d, predicted_angle_6d = model(input_2d, input_edge)
+        predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
-        # middle_index = int((params.in_frames - 1) / 2)
+        middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
-        # target_angle_6d = out_6d[:, middle_index].view_as(predicted_angle_6d)
-        # target_pose_3d = out_3d[:, middle_index].view_as(predicted_pos3d)
+        target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
+        target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
 
         batch_size = input_2d.shape[0]
         hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
@@ -128,6 +130,11 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
                   'train_geodesic_err: {:.4f}'.format(mean_geodesic_distance.item()),
                   'time: {:.4f}s'.format(time.time() - t)
                   )
+
+    # Decay BatchNorm momentum
+    # momentum = 0.1 * np.exp(-(epoch + 1) / params.num_epochs * np.log(0.1 / 0.001))
+    # changer = change_momentum(momentum)
+    # model.apply(changer)
 
     # mean metrics
     metrics_loss_mean = np.mean([x['train_loss'] for x in summary])
@@ -188,21 +195,22 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
         for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
             input_2d = torch.FloatTensor(batch_2d).to(device)
             input_edge = torch.FloatTensor(batch_edge).to(device)
-            target_pose_3d = torch.FloatTensor(batch_3d).to(device).reshape(-1, 17, 3)
-            target_angle_6d = torch.FloatTensor(batch_6d).to(device).reshape(-1, 16, 6)
+            target_pose_3d = torch.FloatTensor(batch_3d).to(device)
+            target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-            # out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, out_3d, out_6d)
-            # out_3d = out_3d.to(device)
-            # out_6d = out_6d.to(device)
-            # input_edge = input_edge.to(device)
-            # input_2d = input_2d.to(device)
+            out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, target_pose_3d, target_angle_6d)
+            target_pose_3d = out_3d.to(device)
+            target_angle_6d = out_6d.to(device)
+            input_edge = input_edge.to(device)
+            input_2d = input_2d.to(device)
 
             predicted_pos3d, predicted_angle_6d = model(input_2d, input_edge)
+            predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
-            # middle_index = int((params.in_frames - 1) / 2)
+            middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
-            # target_angle_6d = out_6d[:, middle_index].view_as(predicted_angle_6d)
-            # target_pose_3d = out_3d[:, middle_index].view_as(predicted_pos3d)
+            target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
+            target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
 
             batch_size = input_2d.shape[0]
             hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
@@ -518,7 +526,7 @@ def main():
         # train_generator = ChunkedGenerator_Seq(params.batch_size//params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
         #                                        edge_feat=edge_features, chunk_length=params.in_frames, pad=0, shuffle=True,)
         train_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                                 edge_feat=edge_features, chunk_length=1, pad=((params.in_frames - 1) // 2), shuffle=True,)
+                                                 edge_feat=edge_features, chunk_length=11, pad=35, shuffle=True,)
 
         logging.info(f"N Frames: {train_generator.num_frames()}, N Batches {train_generator.num_batches}")
         logging.info("- done.")
@@ -526,9 +534,9 @@ def main():
     logging.info("Loading test dataset....")
     test_dataset = Human36M(data_dir=args.data_dir, train=False, ds_category=params.ds_category)
     pos2d, pos3d, angles_6d, edge_features = test_dataset.pos2d, test_dataset.pos3d_centered, test_dataset.gt_angles_6d, test_dataset.edge_features
-    # val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features)
-    val_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                           edge_feat=edge_features, chunk_length=1, pad=((params.in_frames - 1) // 2), shuffle=False,)
+    val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features)
+    # val_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+    #                                        edge_feat=edge_features, chunk_length=5, pad=38, shuffle=False,)
 
     logging.info("Number of validation frames: {}".format(val_generator.num_frames()))
     logging.info("- done.")
@@ -544,6 +552,7 @@ def main():
                       tcn_window=params.tcn_window,
                       in_frames=params.in_frames,
                       gconv_stages=params.gconv_stages,
+                      aggregate=params.aggregate,
                       dropout=params.dropout,
                       use_residual_connections=params.use_residual_connections,
                       use_non_parametric=params.use_non_parametric,

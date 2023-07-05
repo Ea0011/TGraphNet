@@ -36,6 +36,7 @@ class TGraphNet(nn.Module):
                  n_outv,
                  gcn_window,
                  tcn_window,
+                 aggregate,
                  in_frames,
                  gconv_stages,
                  dropout,
@@ -56,12 +57,16 @@ class TGraphNet(nn.Module):
         self.infeat_e = infeat_e
         self.use_edge_conv = use_edge_conv
 
+        self.seq_len = in_frames // gcn_window[0]
+        self.n_nodes = 17 * gcn_window[0]
+        self.n_edges = 16 * gcn_window[0]
+
         self.pre = GCNodeEdgeModule(in_frames, infeat_v, infeat_e, nhid_v[0], nhid_e[0], dropout=0) if use_edge_conv else GCN(in_frames, infeat_v, nhid_v[0], dropout=0)
         self.layers = nn.ModuleList()
 
         n_stages = len(nhid_v)
         for i in range(n_stages):
-            adj_v, adj_e, T = Graph(17, 16, self.gcn_window[i])()
+            adj_v, adj_e, T = Graph(17, 16, self.gcn_window[i], norm=True)()
 
             self.layers.append(
                 STGConv(
@@ -77,7 +82,8 @@ class TGraphNet(nn.Module):
                     num_stages=gconv_stages[i],
                     residual=use_residual_connections,
                     use_non_parametric=use_non_parametric,
-                    use_edge_conv=use_edge_conv),
+                    use_edge_conv=use_edge_conv,
+                    aggregate=aggregate[i]),
                 )
 
         self.post_node = nn. Sequential(
@@ -90,7 +96,6 @@ class TGraphNet(nn.Module):
             self.post_edge = nn.Sequential(
                 nn.Linear(n_outv * 17 + 16 * nhid_e[-1], nhid_e[-1]),
                 nn.ReLU(),
-                nn.Dropout(dropout),
                 nn.Linear(nhid_e[-1],  n_oute * 16)
             )
         else:
@@ -98,7 +103,6 @@ class TGraphNet(nn.Module):
             self.post_edge = nn.Sequential(
                 nn.Linear(n_outv * 17 + 17 * nhid_v[-1], nhid_v[-1]),
                 nn.ReLU(),
-                nn.Dropout(dropout),
                 nn.Linear(nhid_v[-1], n_oute * 16)
             )
 
@@ -106,14 +110,11 @@ class TGraphNet(nn.Module):
         if self.use_edge_conv:
             assert Z is not None, "If edge conv is used then edge features must be passed as input"
 
-            X, Z = X.view(-1, (self.gcn_window[0] * 17), self.infeat_v), Z.view(-1, (self.gcn_window[0] * 16), self.infeat_e)
+            X, Z = X.reshape(-1, self.seq_len, self.n_nodes, self.infeat_v), Z.reshape(-1, self.seq_len, self.n_edges, self.infeat_e)
             X, Z = self.pre(X, Z, self.adj_e, self.adj_v, self.T)
 
             for s in range(len(self.layers) - 1):
                 X, Z = self.layers[s](X, Z)
-
-                # reshape to have B, (T[l] * n_nodes), F for the next layer
-                X, Z = X.view(-1, (self.gcn_window[s+1] * 17), X.shape[-1]), Z.view(-1, (self.gcn_window[s+1] * 16), Z.shape[-1])
 
             X, Z = self.layers[-1](X, Z)
 
@@ -126,12 +127,11 @@ class TGraphNet(nn.Module):
 
             return X.view(batch_size, 17, -1), Z
         else:
-            X = X.view(-1, (self.gcn_window[0] * 17), self.infeat_v)
+            X = X.reshape(-1, self.seq_len, self.n_nodes, self.infeat_v)
             X = self.pre(X, self.adj_v)
 
             for s in range(len(self.layers) - 1):
                 X, _ = self.layers[s](X)
-                X = X.view(-1, (self.gcn_window[s+1] * 17), X.shape[-1])
 
             features, _ = self.layers[-1](X)
             X = self.post_node(features)
