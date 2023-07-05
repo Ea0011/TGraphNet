@@ -241,3 +241,11 @@ def write_val_summary_joint(writer, epoch, summary_epoch, detailed=False):
             writer.add_scalar("joint_metrics/val_pos/"+str(key), value, epoch)
         for key, value in joint_metrics['val_geod'].items():
             writer.add_scalar("joint_metrics/val_geod/"+str(key), value, epoch)
+
+
+def change_momentum(new_momentum):
+    def momentum_changer(m):
+        if isinstance(m, torch.nn.BatchNorm1d) or isinstance(m, torch.nn.BatchNorm2d):
+            m.momentum = new_momentum
+
+    return momentum_changer
