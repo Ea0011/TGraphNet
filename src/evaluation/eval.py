@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
 from scipy import integrate
+from einops import rearrange
 
 
 def dist_acc(dists, thr=0.5):
@@ -94,8 +95,11 @@ def mpjpe(predicted, target):
     and mean per joint error 17 x 1
     """
     assert predicted.shape == target.shape
-    err = torch.norm(predicted - target, dim=len(target.shape)-1) # num_batch x num_joint
-    return torch.mean(err), torch.mean(err, dim=0)
+    errors = torch.norm(predicted - target, dim=len(target.shape)-1)
+    # errors: [B, T, N]
+    errors = rearrange(errors, 'B T N -> N (B T)')
+    errors = torch.mean(errors, dim=-1)
+    return torch.mean(torch.norm(predicted - target, dim=len(target.shape)-1)), errors
 
 
 def p_mpjpe(predicted, target):

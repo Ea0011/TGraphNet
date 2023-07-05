@@ -4,7 +4,6 @@ import time
 from time import strftime, gmtime
 import logging
 import os
-from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -12,7 +11,7 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 import json
 
-from features.networks import TGraphNet
+from features.networks import TGraphNet, TGraphNetSeq
 from graph import Graph
 from angles import *
 from evaluation import *
@@ -20,7 +19,7 @@ from common.utils import Params, set_logger, copy_weight, load_checkpoint, save_
 from common.model import print_layers, weight_init, count_parameters
 from data.h36m_dataset import Human36M
 from common.h36m_skeleton import joint_id_to_names
-from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, eval_data_prepare
+from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq, eval_data_prepare
 import loss
 from common.utils import change_momentum
 
@@ -113,7 +112,8 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
 
         err_vel = metrics[1](
             predicted_pos3d.cpu().data,
-            target_pose_3d.cpu().data
+            target_pose_3d.cpu().data,
+            1
         )
 
         # err_geodesic = metrics[1](
@@ -264,7 +264,8 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
 
             err_vel = metrics[1](
                 predicted_pos3d.cpu().data,
-                target_pose_3d.cpu().data
+                target_pose_3d.cpu().data,
+                1
             )
 
             # err_geodesic = metrics[1](
@@ -501,6 +502,8 @@ def main():
         train_dataset = Human36M(data_dir=args.data_dir, train=True, ds_category=params.ds_category)
         pos2d, pos3d, angles_6d, edge_features = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features
 
+        # train_generator = ChunkedGenerator_Seq2Seq(params.batch_size, cameras=None, poses_2d=pos2d, poses_3d=pos3d,
+        #                                            chunk_length=11, pad=35, out_all=True, shuffle=True)
         train_generator = ChunkedGenerator_Seq(params.batch_size//params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
                                                edge_feat=edge_features, chunk_length=params.in_frames, pad=0, shuffle=True,)
         # train_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
@@ -520,7 +523,7 @@ def main():
     logging.info("- done.")
 
     logging.info("Loading model:")
-    model = TGraphNet(infeat_v=params.input_node_feat,
+    model = TGraphNetSeq(infeat_v=params.input_node_feat,
                       infeat_e=params.input_edge_feat,
                       nhid_v=params.num_hidden_nodes,
                       nhid_e=params.num_hidden_edges,
@@ -560,8 +563,8 @@ def main():
         weight_decay=params.weight_decay
     )
 
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=params.lr_step_size, gamma=params.lr_gamma)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 90, 100], gamma=params.lr_gamma)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=params.lr_step_size, gamma=params.lr_gamma)
+    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 90, 100], gamma=params.lr_gamma)
 
     logging.info("- done.")
     logging.info("Learning rate: {}".format(params.learning_rate))
