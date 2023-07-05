@@ -2,7 +2,12 @@
 
 ***
 
-This repo contains the implementation of the Masters Thesis project TGraphNet, a spatio-temporal graph convolutional neural network for sequence to sequence 3D pose estimation from videos. The thesis report can be found at the root of the repository.
+This repo contains the implementation of TGraphNet, a spatio-temporal graph convolutional neural network for sequence to sequence 3D pose estimation from videos. A detailed report about TGraphNet and general human pose estimation can be found at the root of the repository.
+
+## TGraphNet
+
+TGraphNet is a U-Shaped spatial-temporal graph convolutional network that estimates 3D pose sequence from an input video. It is a 2-stage model, meaning that first a sequence of 2D postures are created from the video, then 2D poses are lifted to 3D poses by TGraphNet.  
+As a U-Shaped network, TGraphNet downsamples and upsamples the input sequence for global temporal feature extraction. To exploit relational features of the input 2D poses, TGraphNet utilizes a non-uniform graph convolutions with learnable affinity matrices.
 
 ## Environment
 
@@ -26,9 +31,9 @@ Dependencies are listed in *requirements.txt* file in *src* folder.
 
 The run `convert_cdf_to_mat.m` from MATLAB.
 
-2D *CPN* detectios for Human3.6M dataset are provided in the `./src/data/` folder.
+2D *CPN* detectios for Human3.6M dataset are provided in the `./data/` folder.
 
-*MPI-3DHP* and *MPI-3DPW* dataset files are pre-processed and provided in the `./src/data/` folder.
+*MPI-3DHP* and *MPI-3DPW* dataset files are pre-processed and provided in the `./data/` folder.
 
 ## Evaluation
 
@@ -58,6 +63,8 @@ python3 models/eval_dhp.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="test
 ```
 
 ### TGraphNet traj
+
+Additionally, TGraphNet (traj) is trained to predict the global trajectory of the person in the 3D space. The architecture is identical to TGraphNet with only difference being that another regression head is used to estimate the position of the root (Hip) joint.
 
 The model checkpoint is located in `./models/stgcn/root_rel/root_rel.pth.tar` folder. To evaluate the model on Human3.6M using a checkpoint, please mention the path to the checkpoint in `./models/stgcn/root_rel/params.json` in `restore_file` key. Then run:
 
@@ -97,5 +104,7 @@ python3 models/train_seq_traj.py --exp_suffix=root_rel --run_suffix=1 --exp_desc
 ```
 
 ## Acknowledgements
+
+I am eternally grateful to my supervisor at Technical University of Munich, Ms.C. Soubarna Banik for guidance and support during this project.
 
 Dataset setup codes and sequence data generators are built on top of [MixSTE](https://github.com/JinluZhang1126/MixSTE#readme) and [VideoPose3D](https://github.com/facebookresearch/VideoPose3D).
