@@ -64,11 +64,9 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
 
     for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in train_gen.next_epoch():
         input_2d = torch.FloatTensor(batch_2d).to(device)
-        input_edge = torch.FloatTensor(batch_edge).to(device)
         target_pose_3d = torch.FloatTensor(batch_3d).to(device)
-        # target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-        predicted_pos3d = model(input_2d, input_edge)
+        predicted_pos3d = model(input_2d)
 
         # target_angle_6d = target_angle_6d.view_as(predicted_angle_6d)
         target_pose_3d = target_pose_3d.view_as(predicted_pos3d)
@@ -215,17 +213,13 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     with torch.no_grad():
         for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
             input_2d = torch.FloatTensor(batch_2d).to(device)
-            input_edge = torch.FloatTensor(batch_edge).to(device)
             target_pose_3d = torch.FloatTensor(batch_3d).to(device)
-            target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-            out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, target_pose_3d, target_angle_6d)
+            out_3d, input_2d = eval_data_prepare(params.in_frames, input_2d, target_pose_3d,)
             target_pose_3d = out_3d.to(device)
-            # target_angle_6d = out_6d.to(device)
-            input_edge = input_edge.to(device)
             input_2d = input_2d.to(device)
 
-            predicted_pos3d = model(input_2d, input_edge)
+            predicted_pos3d = model(input_2d)
 
             # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
             target_pose_3d = target_pose_3d.view_as(predicted_pos3d)

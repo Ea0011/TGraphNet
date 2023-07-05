@@ -4,6 +4,7 @@ import time
 from time import strftime, gmtime
 import logging
 import os
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -63,16 +64,14 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
 
     for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in train_gen.next_epoch():
         input_2d = torch.FloatTensor(batch_2d).to(device)
-        input_edge = torch.FloatTensor(batch_edge).to(device)
         target_pose_3d = torch.FloatTensor(batch_3d).to(device)
         # target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-        predicted_pos3d = model(input_2d, input_edge)
+        predicted_pos3d = model(input_2d)
         predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
         middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
-        # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
         target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
 
         # batch_size = input_2d.shape[0]
@@ -196,17 +195,14 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     with torch.no_grad():
         for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
             input_2d = torch.FloatTensor(batch_2d).to(device)
-            input_edge = torch.FloatTensor(batch_edge).to(device)
             target_pose_3d = torch.FloatTensor(batch_3d).to(device)
-            target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-            out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, target_pose_3d, target_angle_6d)
+            out_3d, input_2d = eval_data_prepare(params.in_frames, input_2d, target_pose_3d)
             target_pose_3d = out_3d.to(device)
             # target_angle_6d = out_6d.to(device)
-            input_edge = input_edge.to(device)
             input_2d = input_2d.to(device)
 
-            predicted_pos3d = model(input_2d, input_edge)
+            predicted_pos3d = model(input_2d)
             predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
             middle_index = int((target_pose_3d.shape[1] - 1) / 2)
@@ -492,7 +488,7 @@ def main():
     pos2d, pos3d, angles_6d, edge_features = test_dataset.pos2d, test_dataset.pos3d_centered, test_dataset.gt_angles_6d, test_dataset.edge_features
     val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features)
     # val_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-    #                                        edge_feat=edge_features, chunk_length=11, pad=35, shuffle=False,)
+    #                                        edge_feat=edge_features, chunk_length=1, pad=40, shuffle=False,)
 
     logging.info("Number of validation frames: {}".format(val_generator.num_frames()))
     logging.info("- done.")

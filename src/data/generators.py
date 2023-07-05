@@ -12,12 +12,10 @@ from torch.nn import functional as F
 from einops import rearrange, repeat
 
 
-def eval_data_prepare(receptive_field, inputs_2d, inputs_edge, out_3d, out_6d,):
-    assert inputs_2d.shape[:-1] == out_3d.shape[:-1], "2d and 3d inputs shape must be same! " + str(inputs_2d.shape) + str(inputs_3d.shape)
+def eval_data_prepare(receptive_field, inputs_2d, out_3d,):
+    assert inputs_2d.shape[:-1] == out_3d.shape[:-1], "2d and 3d inputs shape must be same! " + str(inputs_2d.shape) + str(out_3d.shape)
     inputs_2d_p = torch.squeeze(inputs_2d)
-    inputs_edge_p = torch.squeeze(inputs_edge)
     out_3d_p = torch.squeeze(out_3d)
-    out_6d_p = torch.squeeze(out_6d)
 
     if inputs_2d_p.shape[0] / receptive_field > inputs_2d_p.shape[0] // receptive_field: 
         out_num = inputs_2d_p.shape[0] // receptive_field+1
@@ -25,15 +23,11 @@ def eval_data_prepare(receptive_field, inputs_2d, inputs_edge, out_3d, out_6d,):
         out_num = inputs_2d_p.shape[0] // receptive_field
 
     eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
-    eval_input_edge = torch.empty(out_num, receptive_field, inputs_edge_p.shape[1], inputs_edge_p.shape[2])
     eval_out_3d = torch.empty(out_num, receptive_field, out_3d_p.shape[1], out_3d_p.shape[2])
-    eval_out_6d = torch.empty(out_num, receptive_field, out_6d_p.shape[1], out_6d_p.shape[2])
 
     for i in range(out_num-1):
         eval_input_2d[i,:,:,:] = inputs_2d_p[i*receptive_field:i*receptive_field+receptive_field,:,:]
         eval_out_3d[i,:,:,:] = out_3d_p[i*receptive_field:i*receptive_field+receptive_field,:,:]
-        eval_input_edge[i,:,:,:] = inputs_edge_p[i*receptive_field:i*receptive_field+receptive_field,:,:]
-        eval_out_6d[i,:,:,:] = out_6d_p[i*receptive_field:i*receptive_field+receptive_field,:,:]
     if inputs_2d_p.shape[0] < receptive_field:
         pad_right = receptive_field-inputs_2d_p.shape[0]
         inputs_2d_p = rearrange(inputs_2d_p, 'b f c -> f c b')
@@ -44,22 +38,10 @@ def eval_data_prepare(receptive_field, inputs_2d, inputs_edge, out_3d, out_6d,):
         out_3d_p = rearrange(out_3d_p, 'b f c -> f c b')
         out_3d_p = F.pad(out_3d_p, (0,pad_right), mode='replicate')
         out_3d_p = rearrange(out_3d_p, 'f c b -> b f c')
-    if inputs_edge_p.shape[0] < receptive_field:
-        pad_right = receptive_field-inputs_edge_p.shape[0]
-        inputs_edge_p = rearrange(inputs_edge_p, 'b f c -> f c b')
-        inputs_edge_p = F.pad(inputs_edge_p, (0,pad_right), mode='replicate')
-        inputs_edge_p = rearrange(inputs_edge_p, 'f c b -> b f c')
-    if out_6d_p.shape[0] < receptive_field:
-        pad_right = receptive_field-out_6d_p.shape[0]
-        out_6d_p = rearrange(out_6d_p, 'b f c -> f c b')
-        out_6d_p = F.pad(out_6d_p, (0,pad_right), mode='replicate')
-        out_6d_p = rearrange(out_6d_p, 'f c b -> b f c')
     eval_input_2d[-1,:,:,:] = inputs_2d_p[-receptive_field:,:,:]
     eval_out_3d[-1,:,:,:] = out_3d_p[-receptive_field:,:,:]
-    eval_input_edge[-1,:,:,:] = inputs_edge_p[-receptive_field:,:,:]
-    eval_out_6d[-1,:,:,:] = out_6d_p[-receptive_field:,:,:]
 
-    return eval_out_3d, eval_out_6d, eval_input_edge, eval_input_2d
+    return eval_out_3d, eval_input_2d
 
 
 class ChunkedGenerator_Seq:
@@ -833,14 +815,13 @@ class ChunkedGenerator_Seq2Seq:
                 if self.endless:
                     self.state = (b_i + 1, pairs)
                 if self.poses_3d is None and self.cameras is None:
-                    yield None, None, self.batch_2d[:len(chunks)].copy()
+                    yield None, None, None, self.batch_2d[:len(chunks)].copy(), None
                 elif self.poses_3d is not None and self.cameras is None:
-                    yield None, self.batch_3d[:len(chunks)].copy(), self.batch_2d[:len(chunks)].copy()
+                    yield None, self.batch_3d[:len(chunks)].copy(), None, self.batch_2d[:len(chunks)].copy(), None
                 elif self.poses_3d is None:
-                    yield self.batch_cam[:len(chunks)].copy(), None, self.batch_2d[:len(chunks)].copy()
+                    yield self.batch_cam[:len(chunks)].copy(), None, None, self.batch_2d[:len(chunks)].copy(), None
                 else:
-                    yield self.batch_cam[:len(chunks)].copy(), self.batch_3d[:len(chunks)].copy(), self.batch_2d[:len(chunks)].copy()
-
+                    yield self.batch_cam[:len(chunks)].copy(), self.batch_3d[:len(chunks)].copy(), None, self.batch_2d[:len(chunks)].copy(), None
 
 if __name__ == "__main__":
     seq_2d = torch.randn((500, 17, 2))
