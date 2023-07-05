@@ -92,7 +92,8 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
 
         cam_loss = torch.tensor(0)
         loss_pos = loss_fn[0](predicted_pos3d * 0.001, target_pose_3d * 0.001, torch.ones(17).to(predicted_pos3d.device))
-        loss_dif = loss_fn[1](predicted_pos3d * 0.001, target_pose_3d * 0.001).to(predicted_pos3d.device)
+        loss_dif = loss_fn[1](predicted_pos3d * 0.001, target_pose_3d * 0.001,).to(predicted_pos3d.device)
+        # loss_dif = loss_fn[-1](predicted_pos3d * 0.001, torch.ones(17).to(predicted_pos3d.device))
         loss_velocity = loss_fn[2](predicted_pos3d * 0.001, target_pose_3d * 0.001, axis=1)
         loss_trajectory = loss_fn[0](pred_traj, inputs_traj, 1 / inputs_traj[:, :, :, 2])
         
@@ -104,7 +105,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         loss_proj = loss_fn[0](pred_joints_img, input_2d, torch.ones(17).to(pred_joints_img.device))
         # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
-        loss_train = loss_pos + loss_dif + loss_proj + 0.001 * traj_smoothness + loss_trajectory # + 2.0 * loss_velocity # + loss_proj # + 0.1 * traj_smoothnes # + cam_loss
+        loss_train = loss_pos + loss_dif # + loss_trajectory + loss_proj # + 0.001 * traj_smoothness + loss_trajectory  # + loss_velocity # + loss_proj + 0.001 * traj_smoothness + loss_trajectory # + 2.0 * loss_velocity # + loss_proj # + 0.1 * traj_smoothnes # + cam_loss
 
         # update model
         optimizer.zero_grad()
@@ -681,7 +682,7 @@ def main():
     logging.info("- done.")
     logging.info("Learning rate: {}".format(params.learning_rate))
 
-    loss_fn = [loss.weighted_mpjpe, loss.motion_loss, loss.mean_velocity_error_train]
+    loss_fn = [loss.weighted_mpjpe, loss.motion_loss, loss.mean_velocity_error_train, loss.mean_diff_loss]
     metrics = [mpjpe, mean_velocity_error, t_mpjpe]
 
     if train_test == "train":

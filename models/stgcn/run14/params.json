@@ -26,7 +26,7 @@
   "save_summary_steps": 1000,
   "num_workers": 6,
   "init_weights": false,
-  "restore_file": "../models/stgcn/run13/best_pos.pth.tar",
+  "restore_file": "../models/stgcn/run14/best_pos.pth.tar",
   "ds_category": "cpn",
   "num_joints": 17,
   "last_best_err": 0.0,

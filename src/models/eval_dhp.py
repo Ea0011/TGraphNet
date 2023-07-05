@@ -21,7 +21,7 @@ from data.h36m_dataset import Human36M
 from data.pw3d_dataset import PW3D
 from data.dhp_dataset import DHPDataset
 from common.h36m_skeleton import joint_id_to_names
-from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq, eval_data_prepare
+from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq, eval_data_prepare, ChunkedGeneratorDHP
 import loss
 from common.utils import change_momentum
 from common.camera_params import project_to_2d_linear, project_to_2d, normalize_screen_coordinates_torch
@@ -62,12 +62,13 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     N = 0
 
     with torch.no_grad():
-        for cameras_val, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
-            input_2d = torch.FloatTensor(batch_2d).to(device)
-            target_pose_3d = torch.FloatTensor(batch_3d).to(device)
+        for seq_name, start_3d, end_3d, flip, reverse in val_gen.pairs:
+            cam, batch_3d, batch_2d, seq, subject, cam_ind= val_gen.get_batch(seq_name, start_3d, end_3d, flip, reverse)
+            input_2d = torch.FloatTensor(batch_2d).to(device).reshape(-1, 81, 17, 2)
+            target_pose_3d = torch.FloatTensor(batch_3d).to(device).reshape(-1, 81, 17, 3)
 
             middle_index = int((target_pose_3d.shape[1] - 1) / 2)
-            pad = 15
+            pad = 0
             start_index = middle_index - pad
             end_index = middle_index + pad + 1
             B, T, J, D = target_pose_3d.shape
@@ -292,9 +293,14 @@ def main():
 
     logging.info("Loading test dataset....")
     test_dataset = DHPDataset(data_dir="../data/", train=False)
-    pos2d, pos3d = test_dataset.pos2d, test_dataset.pos3d
-    val_generator = ChunkedGenerator_Seq2Seq(params.batch_size, cameras=None, poses_2d=pos2d, poses_3d=pos3d,
-                                                   chunk_length=31, pad=25, out_all=True, shuffle=False,
+    pos2d, pos3d, valid_frame = test_dataset.pos2d, test_dataset.pos3d, test_dataset.valid_frame
+    # val_generator = ChunkedGenerator_Seq2Seq(params.batch_size, cameras=None, poses_2d=pos2d, poses_3d=pos3d,
+    #                                                chunk_length=31, pad=25, out_all=True, shuffle=False,
+    #                                                augment=False, reverse_aug=False,)
+
+    val_generator = ChunkedGeneratorDHP(64, cameras=None, poses_2d=pos2d, poses_3d=pos3d,
+                              valid_frame=valid_frame, train=False,
+                                                   chunk_length=1, pad=40, out_all=True, shuffle=False,
                                                    augment=False, reverse_aug=False,)
 
     # logging.info(f"N Val Frames: {val_generator.num_frames()}, N Val Batches {val_generator.num_batches}")
