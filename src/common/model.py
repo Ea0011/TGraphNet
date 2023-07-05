@@ -25,6 +25,7 @@ def print_layers(model):
             psize_str = [str(x) for x in psize_list]
             psize_str = ",".join(psize_str)
             logging.info(name + "\t"+psize_str)
+            print(name + "\t"+psize_str)
 
 
 def weight_init(m):

@@ -79,12 +79,20 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
         # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
 
+        inputs_traj = target_pose_3d[:, :, :1].clone()
+        pred_traj = predicted_pos3d[:, :, :1].clone()
+
+        # Train for root relative only this time around
+        target_pose_3d[:, :, 0] = 0
+        predicted_pos3d[:, :, 0] = 0
+
         loss_pos = loss_fn[0](predicted_pos3d, target_pose_3d, torch.tensor([1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]).to(predicted_pos3d.device))
         loss_dif = loss_fn[1](predicted_pos3d, torch.tensor([1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]).to(predicted_pos3d.device))
         loss_velocity = loss_fn[2](predicted_pos3d, target_pose_3d, axis=1)
+        loss_trajectory = loss_fn[0](pred_traj, inputs_traj, 1 / inputs_traj[:, :, :, 2])
         # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
-        loss_train = loss_pos + loss_dif + loss_velocity  # + params.lambda_angle * loss_angle
+        loss_train = loss_pos + loss_dif + loss_velocity # + loss_trajectory
 
         # update model
         optimizer.zero_grad()
@@ -233,12 +241,21 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
             # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
             # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
 
+
+            inputs_traj = target_pose_3d[:, :, :1].clone()
+            pred_traj = predicted_pos3d[:, :, :1].clone()
+
+            # Train for root relative only this time around
+            target_pose_3d[:, :, 0] = 0
+            predicted_pos3d[:, :, 0] = 0
+
             loss_pos = loss_fn[0](predicted_pos3d, target_pose_3d, torch.tensor([1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]).to(predicted_pos3d.device))
             loss_dif = loss_fn[1](predicted_pos3d, torch.tensor([1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]).to(predicted_pos3d.device))
             loss_velocity = loss_fn[2](predicted_pos3d, target_pose_3d, axis=1)
-            # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
+            loss_trajectory = loss_fn[0](pred_traj, inputs_traj, 1 / inputs_traj[:, :, :, 2])
 
-            loss_val = loss_pos + loss_dif + loss_velocity  # + params.lambda_angle * loss_angle
+            # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
+            loss_val = loss_pos + loss_dif + loss_velocity  # + loss_trajectory
 
             err_pos = metrics[0](
                 predicted_pos3d.cpu().data,

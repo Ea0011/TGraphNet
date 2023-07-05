@@ -5,7 +5,7 @@ import scipy.io as sio
 # import cv2
 from angles import *
 from common.h36m_skeleton import *
-from common.camera_params import h36m_cameras_intrinsic_params
+from common.camera_params import h36m_cameras_intrinsic_params, normalize_screen_coordinates
 from data.generators import ChunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq
 
 
@@ -276,7 +276,7 @@ class Human36M:
             # 0th position tracks the root position for future use
             poses = poses_set[k]
             root_joint = poses[:, :1]
-            poses[:, :] -= root_joint
+            poses[:, 1:] -= root_joint  # keep global position intact
             poses_set[k] = poses
 
         return poses_set
@@ -359,6 +359,14 @@ class Human36M:
             camnum = self.map_camid_to_camnum[cam_id]
 
             cam_params = h36m_cameras_intrinsic_params[camnum]
+            for k, v in cam_params.items():
+                if k not in ['id', 'res_w', 'res_h']:
+                    cam_params[k] = np.array(v, dtype=np.float32)
+            
+            # Normalize camera frame
+            cam_params['center'] = normalize_screen_coordinates(cam_params['center'], w=cam_params['res_w'], h=cam_params['res_h']).astype('float32')
+            cam_params['focal_length'] = cam_params['focal_length']/cam_params['res_w']*2
+
             cam_intrinsics = np.concatenate((
                 cam_params['focal_length'],
                 cam_params['center'],
@@ -414,7 +422,7 @@ if __name__ == "__main__":
     # gen = ChunkedGenerator_Frame(256, cameras=cameras, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
     #                                              edge_feat=edge_features, chunk_length=81, pad=0, shuffle=True,)
 
-    gen = ChunkedGenerator_Seq2Seq(128, cameras, pos3d, pos2d, chunk_length=1, pad=40, out_all=True, shuffle=False)
+    gen = ChunkedGenerator_Seq2Seq(128, cameras, pos3d, pos2d, chunk_length=11, pad=35, out_all=True, shuffle=False)
     print(f"N Frames: {gen.num_frames()}, N Batches {gen.num_batches}")
     for cam, batch_3d, batch_2d in gen.next_epoch():
         print("2D", batch_2d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0].reshape(-1), "cam", cam)

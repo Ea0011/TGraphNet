@@ -68,11 +68,12 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         # target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
         predicted_pos3d = model(input_2d)
-        predicted_pos3d[:, 0] = 0 # 0 out hip pos
+        predicted_pos3d[:, :, 0] = 0  # 0 out hip pos
 
         middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
         target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
+        target_pose_3d[:, :, 0] = 0  # 0 out the hip pose
 
         # batch_size = input_2d.shape[0]
         # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
@@ -203,12 +204,13 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
             input_2d = input_2d.to(device)
 
             predicted_pos3d = model(input_2d)
-            predicted_pos3d[:, 0] = 0 # 0 out hip pos
+            predicted_pos3d[:, :, 0] = 0  # 0 out hip pos
 
             middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
             # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
             target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
+            target_pose_3d[:, :, 0] = 0  # 0 out the hip pose
 
             # batch_size = input_2d.shape[0]
             # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
