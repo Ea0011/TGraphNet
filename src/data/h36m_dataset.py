@@ -6,7 +6,7 @@ import scipy.io as sio
 from angles import *
 from common.h36m_skeleton import *
 from common.camera_params import h36m_cameras_intrinsic_params
-from data.generators import ChunkedGenerator_Seq, ChunkedGenerator_Frame
+from data.generators import ChunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq
 
 
 class Human36M:
@@ -259,7 +259,7 @@ class Human36M:
 
         return data_out
 
-    def postprocess_3d(self, poses_set ):
+    def postprocess_3d(self, poses_set):
         """
         Center 3d points around root and extract 17 out of 32 joints
         Args
@@ -408,18 +408,18 @@ if __name__ == "__main__":
     from time import strftime, gmtime
 
     start = time.time()
-    train_dataset = Human36M(data_dir="../../Human3.6m", train=True, ds_category="gt",)
+    train_dataset = Human36M(data_dir="../../Human3.6m", train=False, ds_category="gt",)
     pos2d, pos3d, angles_6d, edge_features, cameras = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features, train_dataset.cam
 
     # gen = ChunkedGenerator_Frame(256, cameras=cameras, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
     #                                              edge_feat=edge_features, chunk_length=81, pad=0, shuffle=True,)
 
-    gen = ChunkedGenerator_Seq(1024, cameras=cameras, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                               edge_feat=edge_features, chunk_length=81, pad=40, shuffle=True,)
+    gen = ChunkedGenerator_Seq2Seq(128, cameras, pos3d, pos2d, chunk_length=1, pad=40, out_all=True, shuffle=False)
     print(f"N Frames: {gen.num_frames()}, N Batches {gen.num_batches}")
-    for cam, batch_3d, batch_6d, batch_2d, batch_edge in gen.next_epoch():
-        print("2D", batch_6d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0, :, 0, 0].reshape(-1), "cam", cam)
-        print(batch_2d.shape, batch_3d.shape, batch_6d.shape, batch_edge.shape, cam.shape)
+    for cam, batch_3d, batch_2d in gen.next_epoch():
+        print("2D", batch_2d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0].reshape(-1), "cam", cam)
+        print(batch_3d[0])
+        print(batch_2d.shape, batch_3d.shape, cam.shape)
         break
 
     print("Elapsed time: ", strftime("%H:%M:%S", gmtime(time.time() - start)))

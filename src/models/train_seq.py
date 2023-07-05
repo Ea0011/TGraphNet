@@ -549,7 +549,8 @@ def main():
         weight_decay=params.weight_decay
     )
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=params.lr_step_size, gamma=params.lr_gamma)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=params.lr_step_size, gamma=params.lr_gamma)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 90, 100], gamma=params.lr_gamma)
 
     logging.info("- done.")
     logging.info("Learning rate: {}".format(params.learning_rate))
