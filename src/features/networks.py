@@ -96,12 +96,13 @@ class TGraphNet(nn.Module):
                     aggregate=aggregate[i]),
                 )
 
-        # self.post_node = nn. Sequential(
-        #     SENet(dim=nhid_v[-1][-1]),
-        #     nn.Linear(nhid_v[-1][-1], n_outv)
-        # )
+        self.post_node = nn. Sequential(
+            SENet(dim=nhid_v[-1][-1]),
+            nn.Linear(nhid_v[-1][-1], n_outv)
+        )
 
-        self.post_node = nn.Linear(nhid_v[-1][-1] * 17, 51)
+        # self.post_node = nn.Linear(nhid_v[-1][-1] * 17, 51)
+        # self.post_node = nn.Conv2d(nhid_v[-1][-1], 3, kernel_size=1)
 
     def forward(self, X, Z=None):
         if self.use_edge_conv:
@@ -133,7 +134,7 @@ class TGraphNet(nn.Module):
             _, features, _ = self.layers[-1](X)
             B, F, J, D = features.shape
 
-            features = features.reshape(B, J * D)
+            # features = features.reshape(B, J * D)
             X = self.post_node(features)
 
             return X.view(B, 17, -1)
@@ -281,7 +282,7 @@ if __name__ == "__main__":
                     nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     n_oute=6,
                     n_outv=3,
-                    gcn_window=[3, 3, 3, 3],
+                    gcn_window=[1, 1, 1, 1],
                     tcn_window=[3, 3, 3, 3],
                     in_frames=81,
                     num_groups=3,

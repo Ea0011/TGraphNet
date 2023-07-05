@@ -6,6 +6,7 @@ import scipy.io as sio
 from angles import *
 from common.h36m_skeleton import *
 from common.camera_params import h36m_cameras_intrinsic_params
+from data.generators import ChunkedGenerator_Seq
 
 
 class Human36M:
@@ -399,12 +400,16 @@ if __name__ == "__main__":
     from time import strftime, gmtime
 
     start = time.time()
-    ds = Human36M(data_dir="../../Human3.6m", train=False, ds_category="cpn", actions="Directions")
+    train_dataset = Human36M(data_dir="../../Human3.6m", train=True, ds_category="gt",)
+    pos2d, pos3d, angles_6d, edge_features = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features
 
-    print(ds.pos3d_centered[0])
+    gen = ChunkedGenerator_Seq(2048, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+                                           edge_feat=edge_features, chunk_length=81, pad=0, shuffle=True,)
 
-    print(ds.image_names)
-
-    print(ds.pos2d[0].shape)
+    print(f"N Frames: {gen.num_frames()}, N Batches {gen.num_batches}")
+    for cam, batch_3d, batch_2d, batch_6d, batch_edge in gen.next_epoch():
+        print("2D", batch_6d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0, :, 0, 0].reshape(-1))
+        print(batch_2d.shape, batch_3d.shape, batch_6d.shape, batch_edge.shape)
+        break
 
     print("Elapsed time: ", strftime("%H:%M:%S", gmtime(time.time() - start)))

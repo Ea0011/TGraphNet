@@ -67,13 +67,11 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         target_pose_3d = torch.FloatTensor(batch_3d).to(device)
         # target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-        predicted_pos3d = model(input_2d, input_edge)
-        predicted_pos3d[:, 0] = 0 # 0 out hip pos
-
-        middle_index = int((target_pose_3d.shape[1] - 1) / 2)
+        predicted_pos3d = model(input_2d[:, :-1], input_edge[:, :-1])  # input only past frames
+        predicted_pos3d[:, 0] = 0 # 0 out hip pop
 
         # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
-        target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
+        target_pose_3d = target_pose_3d[:, -1].view_as(predicted_pos3d)
 
         # batch_size = input_2d.shape[0]
         # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
@@ -200,19 +198,17 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
             target_pose_3d = torch.FloatTensor(batch_3d).to(device)
             target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-            out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, target_pose_3d, target_angle_6d)
+            out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames + 1, input_2d, input_edge, target_pose_3d, target_angle_6d)
             target_pose_3d = out_3d.to(device)
             # target_angle_6d = out_6d.to(device)
             input_edge = input_edge.to(device)
             input_2d = input_2d.to(device)
 
-            predicted_pos3d = model(input_2d, input_edge)
+            predicted_pos3d = model(input_2d[:, :-1], input_edge[:, :-1])
             predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
-            middle_index = int((target_pose_3d.shape[1] - 1) / 2)
-
             # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
-            target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
+            target_pose_3d = target_pose_3d[:, -1].view_as(predicted_pos3d)
 
             # batch_size = input_2d.shape[0]
             # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
@@ -482,7 +478,7 @@ def main():
         # train_generator = ChunkedGenerator_Seq(params.batch_size//params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
         #                                        edge_feat=edge_features, chunk_length=params.in_frames, pad=0, shuffle=True,)
         train_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                                 edge_feat=edge_features, chunk_length=11, pad=35, shuffle=True,)
+                                                 edge_feat=edge_features, chunk_length=12, pad=35, shuffle=True, future_frame_pred=True)
 
         logging.info(f"N Frames: {train_generator.num_frames()}, N Batches {train_generator.num_batches}")
         logging.info("- done.")
@@ -566,7 +562,7 @@ def main():
     if train_test == "test":
         logging.info("Evaluating {}".format(exp))
         logging.info("Restoring from {}".format(params.restore_file))
-        load_checkpoint(params.restore_file, model, optimizer)
+        # load_checkpoint(params.restore_file, model, optimizer)
         logging.info("- done.")
         val_metrics = evaluate(model, loss_fn, val_generator, metrics, params, epoch=0, writer=None, log_dict=None, exp=exp, detailed=True, viz=False, joint_dict=joint_id_to_names)
 
