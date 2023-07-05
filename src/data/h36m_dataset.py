@@ -6,7 +6,7 @@ import scipy.io as sio
 from angles import *
 from common.h36m_skeleton import *
 from common.camera_params import h36m_cameras_intrinsic_params
-from data.generators import ChunkedGenerator_Seq
+from data.generators import ChunkedGenerator_Seq, ChunkedGenerator_Frame
 
 
 class Human36M:
@@ -325,8 +325,8 @@ class Human36M:
             else:
                 self.subjects =  test_subjects
 
-        self.image_names, self.pos2d, self.pos2d_centered, self.pos3d, self.pos3d_centered, \
-            self.gt_angles_euler, self.gt_angles_6d, self.global_ori = [], [], [], [], [], [], [], []
+        self.image_names, self.pos2d, self.pos2d_centered, self.pos3d, self.pos3d_centered, self.cam, \
+            self.gt_angles_euler, self.gt_angles_6d, self.global_ori = [], [], [], [], [], [], [], [], []
         self.edge_features = []
         self.gt_angles_mat = []
 
@@ -358,6 +358,13 @@ class Human36M:
             subject, act, cam_id = key
             camnum = self.map_camid_to_camnum[cam_id]
 
+            cam_params = h36m_cameras_intrinsic_params[camnum]
+            cam_intrinsics = np.concatenate((
+                cam_params['focal_length'],
+                cam_params['center'],
+                cam_params['radial_distortion'],
+                cam_params['tangential_distortion']
+            ))
             if actions != "all":
                 if not (actions in act):
                     continue
@@ -383,6 +390,7 @@ class Human36M:
             self.gt_angles_6d.append(pose_angle_6d)
             self.edge_features.append(edge_features)
             self.global_ori.append(globalori)
+            self.cam.append(cam_intrinsics)
 
             # Can add stride here
 
@@ -390,7 +398,7 @@ class Human36M:
         print("Subjects: ", self.subjects, ds_category)
         print("2d: ", len(self.pos2d), "3d: ", len(self.pos3d_centered), \
              "angles_6d: ", len(self.gt_angles_6d), "edge_feat:", len(self.edge_features), \
-             "global_ori: ", len(self.global_ori))
+             "global_ori: ", len(self.global_ori), "camera params", len(self.cam))
         print(sum([len(s) for s in self.pos2d]))
 
 
@@ -401,15 +409,17 @@ if __name__ == "__main__":
 
     start = time.time()
     train_dataset = Human36M(data_dir="../../Human3.6m", train=True, ds_category="gt",)
-    pos2d, pos3d, angles_6d, edge_features = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features
+    pos2d, pos3d, angles_6d, edge_features, cameras = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features, train_dataset.cam
 
-    gen = ChunkedGenerator_Seq(2048, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                           edge_feat=edge_features, chunk_length=81, pad=0, shuffle=True,)
+    # gen = ChunkedGenerator_Frame(256, cameras=cameras, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+    #                                              edge_feat=edge_features, chunk_length=81, pad=0, shuffle=True,)
 
+    gen = ChunkedGenerator_Seq(1024, cameras=cameras, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+                                               edge_feat=edge_features, chunk_length=81, pad=40, shuffle=True,)
     print(f"N Frames: {gen.num_frames()}, N Batches {gen.num_batches}")
-    for cam, batch_3d, batch_2d, batch_6d, batch_edge in gen.next_epoch():
-        print("2D", batch_6d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0, :, 0, 0].reshape(-1))
-        print(batch_2d.shape, batch_3d.shape, batch_6d.shape, batch_edge.shape)
+    for cam, batch_3d, batch_6d, batch_2d, batch_edge in gen.next_epoch():
+        print("2D", batch_6d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0, :, 0, 0].reshape(-1), "cam", cam)
+        print(batch_2d.shape, batch_3d.shape, batch_6d.shape, batch_edge.shape, cam.shape)
         break
 
     print("Elapsed time: ", strftime("%H:%M:%S", gmtime(time.time() - start)))

@@ -205,3 +205,15 @@ def per_axis_mpjae(mat_pred, mat_gt):
     z_err = geodesic_distance_mat(Rz_gt, Rz_pred)
 
     return x_err, y_err, z_err
+
+
+def mean_velocity_error(predicted, target, axis=0):
+    """
+    Mean per-joint velocity error (i.e. mean Euclidean distance of the 1st derivative)
+    """
+    assert predicted.shape == target.shape
+
+    velocity_predicted = torch.diff(predicted, dim=axis)
+    velocity_target = torch.diff(target, dim=axis)
+
+    return torch.mean(torch.norm(velocity_predicted - velocity_target, dim=len(target.shape)-1))

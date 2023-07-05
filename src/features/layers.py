@@ -467,7 +467,7 @@ class SENet(nn.Module):
 
     def forward(self, x):
         if len(x.shape) > 2:
-            sq = torch.mean(x, dim=(1, 2), keepdim=True)
+            sq = torch.mean(x, dim=(2), keepdim=True)
         else:
             sq = x
         sq = self.relu(self.squeeze(sq))

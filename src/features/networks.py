@@ -49,7 +49,7 @@ class TGraphNet(nn.Module):
         super(TGraphNet, self).__init__()
 
         g = Graph(17, 16, gcn_window[0], norm=True)()
-        adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'],)), g['adj_e_wtemp'], g['ne_mapping']
+        adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
         # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
         self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=False)
@@ -74,8 +74,13 @@ class TGraphNet(nn.Module):
         n_stages = len(nhid_v)
         for i in range(n_stages):
             g = Graph(17, 16, gcn_window[i], norm=True)()
-            adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'],)), g['adj_e_wtemp'], g['ne_mapping']
+            adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
             # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
+
+            if aggregate[i]:
+                n_in_frames = (self.in_frames // np.cumprod([1] + self.tcn_window)[i])
+            else:
+                n_in_frames = self.in_frames
 
             self.layers.append(
                 STGConv(
@@ -86,7 +91,7 @@ class TGraphNet(nn.Module):
                     adj_e=adj_e.to(device),
                     adj_v=adj_v.to(device),
                     T=T.to(device),
-                    n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[i]),
+                    n_in_frames=n_in_frames,
                     gcn_window=self.gcn_window[i],
                     tcn_window=self.tcn_window[i],
                     num_groups=self.num_groups,
@@ -140,7 +145,7 @@ class TGraphNet(nn.Module):
             # features = features.reshape(B, J * D)
             X = self.post_node(features)
 
-            return X.view(B, 17, -1)
+            return X
 
 
 class TGraphNetSeq(nn.Module):
@@ -160,14 +165,15 @@ class TGraphNetSeq(nn.Module):
                  dropout,
                  use_residual_connections,
                  use_non_parametric,
-                 use_edge_conv,):
+                 use_edge_conv,
+                 learn_adj,):
         super().__init__()
         g = Graph(17, 16, gcn_window[0], norm=True)()
-        adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_temp'])), g['adj_e_wtemp'], g['ne_mapping']
+        adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
         # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
-        self.adj_v = nn.Parameter(adj_v).to(device)
-        self.adj_e = nn.Parameter(adj_e).to(device)
+        self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=False)
+        self.adj_e = nn.Parameter(adj_e.to(device), requires_grad=False)
         self.T = T.to(device)
         self.gcn_window = gcn_window
         self.tcn_window = tcn_window
@@ -185,10 +191,15 @@ class TGraphNetSeq(nn.Module):
         self.downsample_layers = nn.ModuleList()
         self.upsample_layers = nn.ModuleList()
 
+        self.post_node = nn.Sequential(
+            SENet(dim=nhid_v[-1][-1]),
+            nn.Linear(nhid_v[-1][-1], n_outv)
+        )
+
         n_stages = len(nhid_v)
         for i in range(n_stages):
             g = Graph(17, 16, gcn_window[i], norm=True)()
-            adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_temp'])), g['adj_e_wtemp'], g['ne_mapping']
+            adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
             # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
             self.downsample_layers.append(
                 STGConv(
@@ -208,12 +219,13 @@ class TGraphNetSeq(nn.Module):
                     residual=use_residual_connections,
                     use_non_parametric=use_non_parametric,
                     use_edge_conv=use_edge_conv,
-                    aggregate=aggregate[i]),
+                    aggregate=aggregate[i],
+                    learn_adj=learn_adj),
                 )
 
         for i in range(n_stages):
             g = Graph(17, 16, gcn_window[i], norm=True)()
-            adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_temp'])), g['adj_e_wtemp'], g['ne_mapping']
+            adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
             # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
             self.upsample_layers.append(
                 nn.ModuleList((
@@ -235,7 +247,8 @@ class TGraphNetSeq(nn.Module):
                         residual=use_residual_connections,
                         use_non_parametric=use_non_parametric,
                         use_edge_conv=use_edge_conv,
-                        aggregate=False),
+                        aggregate=False,
+                        learn_adj=learn_adj),
                     ))
             )
 
@@ -275,7 +288,9 @@ class TGraphNetSeq(nn.Module):
                 X = self.upsample_layers[s][0](X.transpose(1, -1)).transpose(1, -1)
                 X, _, _ = self.upsample_layers[s][1](X + skip)
 
-            return X, Z
+            X = self.post_node(X)
+
+            return X
 
 
 if __name__ == "__main__":

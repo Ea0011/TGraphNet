@@ -30,3 +30,39 @@ def loss_deviation_identity(predicted_angle, target_angle):
         dim=(1, 2)
     )
     return torch.mean(err)
+
+
+def weighted_mpjpe(predicted, target, w):
+    """
+    Weighted mean per-joint position error (i.e. mean Euclidean distance)
+    """
+    assert predicted.shape == target.shape
+    # assert w.shape[0] == predicted.shape[0]
+    return torch.mean(w * torch.norm(predicted - target, dim=len(target.shape) - 1))
+
+
+def mean_velocity_error_train(predicted, target, axis=0):
+    """
+    Mean per-joint velocity error (i.e. mean Euclidean distance of the 1st derivative)
+    """
+    assert predicted.shape == target.shape
+
+    velocity_predicted = torch.diff(predicted, dim=axis)
+    velocity_target = torch.diff(target, dim=axis)
+
+    return torch.mean(torch.norm(velocity_predicted - velocity_target, dim=len(target.shape)-1))
+
+
+def mean_diff_loss(predicted, weight):
+    """
+    Temporal Consistency Loss (Loss imposed on the 1st derivative of the output sequence)
+    """
+    dif_seq = predicted[:, 1:, :, :] - predicted[:, :-1, :, :]
+    weights_joints = torch.ones_like(dif_seq).to(weight.device)
+    weights_mul = weight
+    assert weights_mul.shape[0] == weights_joints.shape[-2]
+
+    weights_joints = torch.mul(weights_joints.permute(0, 1, 3, 2),weights_mul).permute(0, 1, 3, 2)
+    dif_seq = torch.mean(torch.multiply(weights_joints, torch.square(dif_seq)))
+
+    return dif_seq
