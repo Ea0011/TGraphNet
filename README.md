@@ -31,7 +31,7 @@ Dependencies are listed in *requirements.txt* file in *src* folder.
 
 The run `convert_cdf_to_mat.m` from MATLAB.
 
-2D *CPN* detectios for Human3.6M dataset are provided in the `./data/` folder.
+2D *CPN* detectios for Human3.6M dataset can be downloaded from VideoPose3D repository at [](https://github.com/facebookresearch/VideoPose3D).
 
 *MPI-3DHP* and *MPI-3DPW* dataset files are pre-processed and provided in the `./data/` folder.
 
