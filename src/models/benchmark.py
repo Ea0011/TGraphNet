@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.benchmark as benchmark
 
-from features.networks import TGraphNet
+from features.networks import TGraphNet, TGraphNetSeq
 from angles import *
 from evaluation import *
 
@@ -42,15 +42,15 @@ def forward_backward_bench(model, optimizer, batch_size, n_frames, n_batches=1):
         # print("2. After forward pass: {}".format(torch.cuda.memory_allocated(device)))
 
         # concat static hip orientation (zero) for ploss
-        batch_size = batch_pose_2d.shape[0]
-        hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size,1,1).to(device)
-        predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
-        batch_angles_6d = torch.cat((hip_ori, batch_angles_6d), dim=1)
+        # batch_size = batch_pose_2d.shape[0]
+        # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size,1,1).to(device)
+        # predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
+        # batch_angles_6d = torch.cat((hip_ori, batch_angles_6d), dim=1)
 
-        predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
-        batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
+        # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
+        # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
 
-        loss_train = F.mse_loss(predicted_angle_6d, batch_angles_6d) + F.mse_loss(predicted_pos3d, batch_pose_3d)
+        loss_train = F.mse_loss(predicted_pos3d, predicted_pos3d)
 
         # update model
         optimizer.zero_grad()
@@ -79,18 +79,20 @@ def forward_bench(model, batch_size, n_frames):
 if __name__ == "__main__":
     gcn = TGraphNet(infeat_v=2,
                     infeat_e=4,
-                    nhid_v=[256, 256, 256, 256],
-                    nhid_e=[256, 256, 256, 256],
+                    nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
+                    nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     n_oute=6,
                     n_outv=3,
-                    gcn_window=[3, 3, 3, 3],
-                    tcn_window=[3, 3, 3, 3],
+                    gcn_window=[3, 3, 3, 3,],
+                    tcn_window=[3, 3, 3, 3,],
+                    num_groups=3,
+                    aggregate=[True, True, True, True,],
                     in_frames=81,
-                    gconv_stages=[1, 2, 2, 3],
+                    gconv_stages=[1, 1, 1, 1],
                     dropout=0.25,
                     use_residual_connections=True,
                     use_non_parametric=False,
-                    use_edge_conv=True,).to(device)
+                    use_edge_conv=False,).to(device)
 
     print(gcn)
 

@@ -129,7 +129,7 @@ def load_checkpoint(checkpoint, model, optimizer=None, scheduler=None, last_best
     if not os.path.exists(checkpoint):
         raise("File doesn't exist {}".format(checkpoint))
     checkpoint = torch.load(checkpoint, map_location="cpu")
-    model.load_state_dict(checkpoint['state_dict'], strict=False)
+    model.load_state_dict(checkpoint['state_dict'], strict=True)
 
     if optimizer:
         optimizer.load_state_dict(checkpoint['optim_dict'])
@@ -249,3 +249,9 @@ def change_momentum(new_momentum):
             m.momentum = new_momentum
 
     return momentum_changer
+
+
+def log_gradients_in_model(model, logger, step):
+    for tag, value in model.named_parameters():
+        if value.grad is not None:
+            logger.add_histogram(tag + "/grad", value.grad.cpu(), step)

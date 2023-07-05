@@ -5,19 +5,18 @@ import math
 
 
 class GCN(nn.Module):
-    def __init__(self, in_frames, in_features, out_features, dropout=0):
+    def __init__(self, in_frames, in_features, out_features, num_groups=3, dropout=0):
         super(GCN, self).__init__()
 
         self.in_features = in_features
         self.out_features = out_features
         self.in_frames = in_frames
         self.dropout = dropout
+        self.num_groups = num_groups
 
-        self.weight = nn.Parameter(torch.FloatTensor(in_features, out_features))
+        self.weight = nn.Parameter(torch.FloatTensor(in_features, self.num_groups * out_features))
         self.bias = nn.Parameter(torch.FloatTensor(out_features))
         self.norm = nn.BatchNorm2d(out_features)
-
-        # Store the adjacency matrix as an attribute of the model
 
         self.reset_parameters()
 
@@ -26,8 +25,11 @@ class GCN(nn.Module):
         nn.init.zeros_(self.bias)
 
     def forward(self, input_features, adj):
+        B, T, V, _ = input_features.shape
         support = input_features @ self.weight
-        output = adj @ support
+        support = support.reshape(B, T, V, self.num_groups, self.out_features)
+        support = support.transpose(-3, -2)
+        output = torch.sum(adj @ support, dim=-3)
 
         if self.bias is not None:
             output = output + self.bias
@@ -72,13 +74,22 @@ class NodeResidualBlock(nn.Module):
     """
     Residual block with two node-edge modules
     """
-    def __init__(self, in_frames, nfeat_v, nhid_v, dropout):
+    def __init__(self, in_frames, nfeat_v, nhid_v, num_groups, dropout):
         super(NodeResidualBlock, self).__init__()
-        self.gc1 = GCN(in_frames, nfeat_v, nhid_v, dropout)
-        self.gc2 = GCN(in_frames, nfeat_v, nhid_v, dropout)
+        self.gc1 = GCN(in_frames, nfeat_v, nhid_v, num_groups, dropout)
+        self.gc2 = GCN(in_frames, nhid_v, nhid_v, num_groups, dropout)
+
+        self.residual_flag = "same"
+
+        if (nfeat_v != nhid_v):
+            self.residual_flag = "diff"
+            self.residual_gc = GCN(in_frames, nfeat_v, nhid_v, num_groups, dropout)
 
     def forward(self, X, adj_v):
-        residual_X = X
+        if self.residual_flag == "same":
+            residual_X = X
+        else:
+            residual_X = self.residual_gc(X, adj_v)
 
         X = self.gc1(X, adj_v)
         X = self.gc2(X, adj_v)
@@ -172,10 +183,10 @@ class NodeEdgeConv(nn.Module):
             '''
             \sigma( ̃ A_v ( H_v + W_s (T H_e) ) W_v)
             '''
-            E, V = adj_e.shape[0], adj_v.shape[0]
-            msg_to_nodes = T @ H_e  # B x V x F
-            msg_to_nodes_t = msg_to_nodes.view(-1, H_e.shape[1], V, H_e.shape[-1]) @ self.weight_sec
-            node_feat = H_v + msg_to_nodes_t
+            # E, V = adj_e.shape[0], adj_v.shape[0]
+            # msg_to_nodes = T @ H_e  # B x V x F
+            # msg_to_nodes_t = msg_to_nodes.view(-1, H_e.shape[1], V, H_e.shape[-1]) @ self.weight_sec
+            node_feat = H_v # + msg_to_nodes_t
 
             # node transformation
             temp = (node_feat @ self.weight)
@@ -189,10 +200,10 @@ class NodeEdgeConv(nn.Module):
             '''
             \sigma(T.t() Φ(H_v P_v) T * ̃ A_e H_e W_e)
             '''
-            E, V = adj_e.shape[0], adj_v.shape[0]
-            msg_to_edges = T.t() @ H_v  # B x E x F
-            msg_to_edges_t = msg_to_edges.view(-1, H_e.shape[1], E, H_v.shape[-1]) @ self.weight_sec  # b x V x F'
-            edge_feat = H_e + msg_to_edges_t
+            # E, V = adj_e.shape[0], adj_v.shape[0]
+            # msg_to_edges = T.t() @ H_v  # B x E x F
+            # msg_to_edges_t = msg_to_edges.view(-1, H_e.shape[1], E, H_v.shape[-1]) @ self.weight_sec  # b x V x F'
+            edge_feat = H_e # + msg_to_edges_t
 
             temp = (edge_feat @ self.weight)
             output = adj_e @ temp
@@ -298,6 +309,8 @@ class GCResidualBlock(nn.Module):
 
 class STGConv(nn.Module):
     def __init__(self,
+                 nin_v,
+                 nin_e,
                  nhid_v,
                  nhid_e,
                  adj_e,
@@ -306,6 +319,7 @@ class STGConv(nn.Module):
                  n_in_frames,
                  gcn_window=9,
                  tcn_window=3,
+                 num_groups=1,
                  dropout=.0,
                  num_stages=1,
                  residual=False,
@@ -325,20 +339,31 @@ class STGConv(nn.Module):
         self.aggregate = aggregate
         self.nhid_v = nhid_v
         self.nhid_e = nhid_e
+        self.nin_v = nin_v
+        self.nin_e = nin_e
+        self.num_groups = num_groups
 
         self.seq_len = self.n_in_frames // self.frame_length
         self.n_nodes_in_seq = self.frame_length * 17
         self.n_edges_in_seq = self.frame_length * 16
 
         self.graph_stages = nn.ModuleList()
-        for s in range(num_stages):
+        if residual:
+            self.graph_stages.append(
+                GCResidualBlock(n_in_frames, nin_v, nin_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(n_in_frames, nin_v, nhid_v, self.num_groups, dropout)
+            )
+        else:
+            self.graph_stages.append(
+                GCNodeEdgeModule(n_in_frames, nin_v, nin_e, nhid_v, nhid_e, dropout) if use_edge_conv else GCN(n_in_frames, nin_v, nhid_v, self.num_groups, dropout)
+            )
+        for s in range(num_stages - 1):
             if residual:
                 self.graph_stages.append(
-                    GCResidualBlock(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(n_in_frames, nhid_v, nhid_v, dropout)
+                    GCResidualBlock(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(n_in_frames, nhid_v, nhid_v, self.num_groups, dropout)
                 )
             else:
                 self.graph_stages.append(
-                    GCNodeEdgeModule(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else GCN(n_in_frames, nhid_v, nhid_v, dropout)
+                    GCNodeEdgeModule(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else GCN(n_in_frames, nhid_v, nhid_v, self.num_groups, dropout)
                 )
 
         # Add a non parametric option here
@@ -359,35 +384,11 @@ class STGConv(nn.Module):
                            use_non_parametric=use_non_parametric,
                            dropout=dropout)
 
-    def norm_g(self, g):
-        degrees = torch.sum(g, 1, keepdim=True)
-        degrees[degrees == 0] = 1
-        g = g / degrees
-        return g
-
-    def normalize_undigraph(self, A_hat):
-        if (len(A_hat.shape) == 3):
-            num_group, num_node = A_hat.shape[:2]
-            normed_adj = torch.zeros(num_group, num_node, num_node).to(A_hat.device)
-
-            for grp_id in range(num_group):
-                grp_adj = A_hat[grp_id]
-                normed_adj[grp_id] = self.norm_g(grp_adj)
-
-        elif (len(A_hat.shape) == 2):
-            A_hat = F.relu(A_hat)
-            normed_adj = self.norm_g(A_hat)
-
-        return normed_adj
-
     def forward(self, X, Z=None):
         if self.use_edge_conv:
             for s in range(len(self.graph_stages)):
-                normed_adj_e = self.normalize_undigraph(self.adj_e[s])
-                normed_adj_v = self.normalize_undigraph(self.adj_v[s])
-
                 X, Z = X.reshape(-1, self.seq_len, self.n_nodes_in_seq, self.nhid_v), Z.reshape(-1, self.seq_len, self.n_edges_in_seq, self.nhid_v)
-                X, Z = self.graph_stages[s](X, Z, normed_adj_e, normed_adj_v, self.T)
+                X, Z = self.graph_stages[s](X, Z, self.adj_e[s], self.adj_v[s], self.T)
 
             if self.aggregate:
                 X, Z = X.reshape(-1, self.n_in_frames, 17, self.nhid_v).transpose(1, -1), Z.reshape(-1, self.n_in_frames, 16, self.nhid_e).transpose(1, -1)
@@ -397,14 +398,19 @@ class STGConv(nn.Module):
                 Z = Z.transpose(1, -1)
             return X, Z
         else:
-            for s in range(len(self.graph_stages)):
+            X = X.reshape(-1, self.seq_len, self.n_nodes_in_seq, self.nin_v)
+            X = self.graph_stages[0](X, self.adj_v[0])
+            X = X.reshape(-1, self.n_in_frames, 17, self.nhid_v)
+
+            for s in range(len(self.graph_stages) - 1):
                 X = X.reshape(-1, self.seq_len, self.n_nodes_in_seq, self.nhid_v)
-                X = self.graph_stages[s](X, self.adj_v[s])
+                X = self.graph_stages[s + 1](X, self.adj_v[s])
+                X = X.reshape(-1, self.n_in_frames, 17, self.nhid_v)
 
             if self.aggregate:
-                X = X.reshape(-1, self.n_in_frames, 17, self.nhid_v).transpose(1, -1)
-                X = self.tcn(X).transpose(1, -1)
-            return X, Z
+                X_down = self.tcn(X.transpose(1, -1)).transpose(1, -1)
+                return X, X_down, Z
+            return X, X, Z
 
     def string(self):
         return f"In Frames: {self.n_in_frames} -> Out Frames: {self.n_in_frames // self.tcn_window}, Processed Window: {self.tcn_window}"
@@ -424,7 +430,7 @@ class SENet(nn.Module):
 
     def forward(self, x):
         if len(x.shape) > 2:
-            sq = torch.mean(x, dim=1, keepdim=True)
+            sq = torch.mean(x, dim=(1, 2), keepdim=True)
         else:
             sq = x
         sq = self.relu(self.squeeze(sq))

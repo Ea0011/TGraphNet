@@ -399,7 +399,9 @@ if __name__ == "__main__":
     from time import strftime, gmtime
 
     start = time.time()
-    ds = Human36M(data_dir="../../Human3.6m", train=False, ds_category="gt", actions="all")
+    ds = Human36M(data_dir="../../Human3.6m", train=False, ds_category="cpn", actions="Directions")
+
+    print(ds.pos3d_centered[0])
 
     print(ds.image_names)
 

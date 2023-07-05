@@ -454,7 +454,7 @@ class ChunkedGenerator_Frame:
             assert poses_3d is None or poses_3d[i].shape[0] == poses_3d[i].shape[0]
             n_chunks = (poses_2d[i].shape[0] + chunk_length - 1) // chunk_length
             offset = (n_chunks * chunk_length - poses_2d[i].shape[0]) // 2
-            bounds = np.arange(n_chunks+1)*chunk_length - offset
+            bounds = (np.arange(n_chunks+1)*chunk_length - offset)
             augment_vector = np.full(len(bounds - 1), False, dtype=bool)
             pairs += zip(np.repeat(i, len(bounds - 1)), bounds[:-1], bounds[1:], augment_vector)
             if augment:
@@ -694,13 +694,14 @@ if __name__ == "__main__":
 
     for i in range(seq_2d.shape[0]):
         seq_2d[i] = torch.ones(17, 2) * (i + 1)
-    gen = ChunkedGenerator_Seq(batch_size=32, cameras=None,
+        seq_3d[i] = torch.ones(17, 3) * (i + 1)
+    gen = ChunkedGenerator_Frame(batch_size=32, cameras=None,
                                poses_2d=[seq_2d,], poses_3d=[seq_3d,], rot_6d=[seq_6d,],
-                               edge_feat=[seq_edges,], chunk_length=1, pad=121)
+                               edge_feat=[seq_edges,], chunk_length=1, pad=40)
 
     print(f"N Frames: {gen.num_frames()}, N Batches {gen.num_batches}")
     for cam, batch_3d, batch_2d, batch_6d, batch_edge in gen.next_epoch():
-        print("2D", batch_6d[0, :, 0, 0].reshape(-1))
+        print("2D", batch_6d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0, :, 0, 0].reshape(-1))
         print(batch_2d.shape, batch_3d.shape, batch_6d.shape, batch_edge.shape)
 
     unchunked_gen = UnchunkedGenerator_Frame(cameras=None, poses_3d=[seq_3d], poses_2d=[seq_2d], rot_6d=[seq_6d], edge_feat=[seq_edges], pad=121)

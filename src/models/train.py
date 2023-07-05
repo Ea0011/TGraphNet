@@ -15,7 +15,7 @@ from features.networks import TGraphNet
 from graph import Graph
 from angles import *
 from evaluation import *
-from common.utils import Params, set_logger, copy_weight, load_checkpoint, save_checkpoint_pos_ori, write_log, get_lr, write_train_summary_scalars, write_val_summary_joint
+from common.utils import Params, set_logger, copy_weight, load_checkpoint, save_checkpoint_pos_ori, write_log, get_lr, write_train_summary_scalars, write_val_summary_joint, log_gradients_in_model
 from common.model import print_layers, weight_init, count_parameters
 from data.h36m_dataset import Human36M
 from common.h36m_skeleton import joint_id_to_names
@@ -91,6 +91,11 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         # update model
         optimizer.zero_grad()
         loss_train.backward()
+
+        # if n_batches % params.save_summary_steps == 0:
+        #     log_gradients_in_model(model, writer, int(f"{epoch+1}{n_batches}"))
+
+        nn.utils.clip_grad_value_(model.parameters(), clip_value=1.0)
         optimizer.step()
 
         n_batches += 1
@@ -119,7 +124,6 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         summary.append(summary_batch)
 
         if n_batches % params.save_summary_steps == 0:
-
             print('Epoch: {:04d}'.format(epoch),
                   'Batch: {}/{}'.format(n_batches, num_batches),
                   'loss_train: {:.4f}'.format(loss_train.item()),
@@ -263,7 +267,7 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
           "Epoch: " + str(epoch) + "\t" +
           "loss: {0:5.7f} ".format(metrics_loss_mean) + "\t" +
           "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t" +
-          "avg_err_geodesic: {0:5.3f} ".format(metrics_geod_err_with_hip_mean)
+          "avg_err_geodesic: {0:5.3f} ".format(metrics_geod_err_mean)
           )
     for joint_id in range(len(metrics_err_joint)):
         logging.info("{0}:\t pos_err: {1:5.3f}\t geod_err: {2:5.3f}".format(joint_dict[joint_id], metrics_err_joint[joint_id], metrics_geod_err_per_joint[joint_id]))
@@ -536,7 +540,7 @@ def main():
     pos2d, pos3d, angles_6d, edge_features = test_dataset.pos2d, test_dataset.pos3d_centered, test_dataset.gt_angles_6d, test_dataset.edge_features
     val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features)
     # val_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-    #                                        edge_feat=edge_features, chunk_length=5, pad=38, shuffle=False,)
+    #                                        edge_feat=edge_features, chunk_length=11, pad=35, shuffle=False,)
 
     logging.info("Number of validation frames: {}".format(val_generator.num_frames()))
     logging.info("- done.")
@@ -552,6 +556,7 @@ def main():
                       tcn_window=params.tcn_window,
                       in_frames=params.in_frames,
                       gconv_stages=params.gconv_stages,
+                      num_groups=params.num_groups,
                       aggregate=params.aggregate,
                       dropout=params.dropout,
                       use_residual_connections=params.use_residual_connections,
@@ -576,6 +581,7 @@ def main():
     optimizer = optim.AdamW(
         model.parameters(),
         lr=params.learning_rate,
+        amsgrad=True,
         weight_decay=params.weight_decay
     )
 
@@ -608,7 +614,7 @@ def main():
     if train_test == "test":
         logging.info("Evaluating {}".format(exp))
         logging.info("Restoring from {}".format(params.restore_file))
-        # load_checkpoint(params.restore_file, model, optimizer)
+        load_checkpoint(params.restore_file, model,)
         logging.info("- done.")
         val_metrics = evaluate(model, loss_fn, val_generator, metrics, params, epoch=0, writer=None, log_dict=None, exp=exp, detailed=True, viz=False, joint_dict=joint_id_to_names)
 
