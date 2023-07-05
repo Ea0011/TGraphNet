@@ -5,7 +5,7 @@ import numpy as np
 from common.model import *
 from features.layers import STGConv, GCNodeEdgeModule, SENet, GCN
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class TGraphNet(nn.Module):
@@ -46,9 +46,9 @@ class TGraphNet(nn.Module):
 
         adj_v, adj_e, T = Graph(17, 16, gcn_window[0])()
 
-        self.adj_v = nn.Parameter(adj_v)
-        self.adj_e = nn.Parameter(adj_e)
-        self.T = T
+        self.adj_v = nn.Parameter(adj_v).to(device)
+        self.adj_e = nn.Parameter(adj_e).to(device)
+        self.T = T.to(device)
         self.gcn_window = gcn_window
         self.tcn_window = tcn_window
         self.in_frames = in_frames
@@ -67,9 +67,9 @@ class TGraphNet(nn.Module):
                 STGConv(
                     nhid_v=nhid_v[i],
                     nhid_e=nhid_e[i],
-                    adj_e=adj_e,
-                    adj_v=adj_v,
-                    T=T,
+                    adj_e=adj_e.to(device),
+                    adj_v=adj_v.to(device),
+                    T=T.to(device),
                     n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[i]),
                     gcn_window=self.gcn_window[i],
                     tcn_window=self.tcn_window[i],
@@ -114,9 +114,9 @@ class TGraphNet(nn.Module):
             Z = self.senet_edge(Z)
             batch_size = Z.shape[0]
             feat = torch.cat((X.view(batch_size, -1), Z.reshape(batch_size, -1)), axis=1)
-            Z = self.post_edge(feat).view(batch_size, self.num_edges, -1)
+            Z = self.post_edge(feat).view(batch_size, 16, -1)
 
-            return X, Z
+            return X.view(batch_size, 17, -1), Z
         else:
             X = X.view(-1, (self.gcn_window[0] * 17), self.infeat_v)
             X = self.pre(X, self.adj_v)

@@ -1,0 +1,120 @@
+import argparse
+from time import strftime, gmtime
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.utils.benchmark as benchmark
+
+from features.networks import TGraphNet
+from angles import *
+from evaluation import *
+
+parser = argparse.ArgumentParser(description='Benchmark Parameters')
+parser.add_argument('--batch_size', metavar='B', type=int,
+                    help='Batch size. Number of sequences in a singe input',
+                    default=32)
+parser.add_argument('--mode', help='which passes to benchmark', type=str, choices=['forward', 'both'], default="forward")
+
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+def forward_backward_bench(model, optimizer, batch_size, n_frames):
+    """
+    Training loop of the model
+    """
+    model.train()
+    optimizer.zero_grad()
+
+    # synthetic data
+    batch_pose_2d = torch.randn((batch_size, n_frames, 17, 2)).to(device)
+    batch_edge_feat = torch.randn((batch_size, n_frames, 16, 4)).to(device)
+    batch_pose_3d = torch.randn((batch_size, 17, 3)).to(device)
+    batch_angles_6d = torch.randn((batch_size, 16, 6)).to(device)
+
+    print("1. Before forward pass: {}".format(torch.cuda.memory_allocated(device)))
+    predicted_pos3d, predicted_angle_6d = model(batch_pose_2d, batch_edge_feat)
+    print("2. After forward pass: {}".format(torch.cuda.memory_allocated(device)))
+
+    # concat static hip orientation (zero) for ploss
+    batch_size = batch_pose_2d.shape[0]
+    hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size,1,1).to(device)
+    predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
+    batch_angles_6d = torch.cat((hip_ori, batch_angles_6d), dim=1)
+
+    predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
+    batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
+
+    loss_train = F.mse_loss(predicted_angle_6d, batch_angles_6d) + F.mse_loss(predicted_pos3d, batch_pose_3d)
+
+    # update model
+    optimizer.zero_grad()
+    loss_train.backward()
+    print("3. After backward pass: {}".format(torch.cuda.memory_allocated(device)))
+    optimizer.step()
+    print("4. After optim step: {}".format(torch.cuda.memory_allocated(device)))
+
+    return loss_train.item()
+
+
+def forward_bench(model, batch_size, n_frames):
+    model.train()
+
+    # synthetic data
+    batch_pose_2d = torch.randn((batch_size, n_frames, 17, 2)).to(device)
+    batch_edge_feat = torch.randn((batch_size, n_frames, 16, 4)).to(device)
+    batch_pose_3d = torch.randn((batch_size, 17, 3)).to(device)
+    batch_angles_6d = torch.randn((batch_size, 16, 6)).to(device)
+
+    predicted_pos3d, predicted_angle_6d = model(batch_pose_2d, batch_edge_feat)
+
+    return predicted_pos3d, predicted_angle_6d
+
+
+if __name__ == "__main__":
+    gcn = TGraphNet(infeat_v=2,
+                    infeat_e=4,
+                    nhid_v=[256, 256, 256, 256],
+                    nhid_e=[256, 256, 256, 256],
+                    n_oute=6,
+                    n_outv=3,
+                    gcn_window=[9, 9, 9, 9],
+                    tcn_window=[3, 3, 3, 9],
+                    in_frames=243,
+                    gconv_stages=[1, 2, 2, 3],
+                    dropout=0.25,
+                    use_residual_connections=True,
+                    use_non_parametric=True,
+                    use_edge_conv=True,).to(device)
+
+    print(gcn)
+
+    args = parser.parse_args()
+
+    if args.mode == "both":
+        opt = optim.AdamW(gcn.parameters(), lr=0.001)
+        t0 = benchmark.Timer(
+            stmt="forward_backward_bench(gcn, opt, {}, 243)".format(str(args.batch_size)),
+            label="forward and backward pass benchmark on {} device".format(str(device)),
+            globals={
+                'forward_backward_bench': forward_backward_bench,
+                'opt': opt,
+                'gcn': gcn,
+                'device': device,
+            }
+        )
+        print(t0.timeit(100))
+    else:
+        t1 = benchmark.Timer(
+            stmt="forward_bench(gcn, {}, 243)".format(str(args.batch_size)),
+            label="forward pass benchmark on {} device".format(str(device)),
+            num_threads=torch.get_num_threads(),
+            globals={
+                'forward_backward_bench': forward_backward_bench,
+                'forward_bench': forward_bench,
+                'gcn': gcn,
+                'device': device,
+            }
+        )
+        print(t1.timeit(100))
