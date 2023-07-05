@@ -1,9 +1,7 @@
-*.tar
 *.out
 *.err
 runs/*
 out/*
-data/*.npz
 src/__pycache__
 */*/__pycache__/
 */__pycache__/
