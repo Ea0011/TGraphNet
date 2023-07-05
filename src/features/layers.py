@@ -126,9 +126,9 @@ class NodeTCNResidualBlock(nn.Module):
         else:
             residual_X = self.residual_gc(X, adj_v)
 
-        sz = X.shape
+        B, T, J, _ = X.shape
         X = self.gcn(X, adj_v).reshape(-1, self.in_frames, 17, self.nhid_v).transpose(1, -1)
-        X = self.tcn(X).transpose(1, -1).reshape(sz)
+        X = self.tcn(X).transpose(1, -1).reshape(B, T, J, self.nhid_v)
 
         X = F.relu(X + residual_X)
 

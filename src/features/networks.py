@@ -192,8 +192,8 @@ class TGraphNetSeq(nn.Module):
         self.upsample_layers = nn.ModuleList()
 
         self.post_node = nn.Sequential(
-            SENet(dim=nhid_v[-1][-1]),
-            nn.Linear(nhid_v[-1][-1], n_outv)
+            SENet(dim=nhid_v[0][0]),
+            nn.Linear(nhid_v[0][0], n_outv)
         )
 
         n_stages = len(nhid_v)
@@ -243,7 +243,7 @@ class TGraphNetSeq(nn.Module):
                         tcn_window=self.tcn_window[i],
                         num_groups=self.num_groups,
                         dropout=dropout,
-                        num_stages=gconv_stages[i],
+                        num_stages=1,
                         residual=use_residual_connections,
                         use_non_parametric=use_non_parametric,
                         use_edge_conv=use_edge_conv,
@@ -294,27 +294,27 @@ class TGraphNetSeq(nn.Module):
 
 
 if __name__ == "__main__":
-    gcn = TGraphNet(infeat_v=2,
+    gcn = TGraphNetSeq(infeat_v=2,
                     infeat_e=4,
                     nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     n_oute=6,
                     n_outv=3,
-                    gcn_window=[1, 1, 1, 1],
+                    gcn_window=[3, 3, 3, 3],
                     tcn_window=[3, 3, 3, 3],
                     in_frames=81,
                     num_groups=3,
                     aggregate=[True] * 4,
-                    gconv_stages=[1, 1, 1, 1],
-                    dropout=0.25,
+                    gconv_stages=[1, 2, 2, 3],
+                    dropout=0.1,
                     use_residual_connections=True,
                     use_non_parametric=False,
                     use_edge_conv=False,
                     learn_adj=False,)
 
-    for m in gcn.layers:
+    for m in gcn.downsample_layers:
         print(m.string())
 
-    # print(gcn)
+    print(gcn)
     print_layers(gcn)
     print(count_parameters(gcn), get_model_size(gcn))

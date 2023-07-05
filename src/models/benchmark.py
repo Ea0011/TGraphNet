@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.benchmark as benchmark
+from common.model import print_layers, count_parameters, get_model_size
 
 from features.networks import TGraphNet, TGraphNetSeq
 from angles import *
@@ -77,7 +78,26 @@ def forward_bench(model, batch_size, n_frames):
 
 
 if __name__ == "__main__":
-    gcn = TGraphNet(infeat_v=2,
+    # gcn = TGraphNet(infeat_v=2,
+    #                 infeat_e=4,
+    #                 nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
+    #                 nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
+    #                 n_oute=6,
+    #                 n_outv=3,
+    #                 gcn_window=[3, 3, 3, 3,],
+    #                 tcn_window=[3, 3, 3, 3,],
+    #                 num_groups=4,
+    #                 aggregate=[False] * 4,
+    #                 in_frames=81,
+    #                 gconv_stages=[1, 1, 1, 1],
+    #                 dropout=0.1,
+    #                 use_residual_connections=True,
+    #                 use_non_parametric=False,
+    #                 use_edge_conv=False,
+    #                 learn_adj=False).to(device)
+
+    # [[16, 32], [32, 64], [64, 128], [128, 256]]
+    gcn = TGraphNetSeq(infeat_v=2,
                     infeat_e=4,
                     nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
@@ -85,17 +105,19 @@ if __name__ == "__main__":
                     n_outv=3,
                     gcn_window=[3, 3, 3, 3,],
                     tcn_window=[3, 3, 3, 3,],
-                    num_groups=3,
-                    aggregate=[True, True, True, True,],
+                    num_groups=4,
+                    aggregate=[True] * 4,
                     in_frames=81,
-                    gconv_stages=[1, 1, 1, 1],
+                    gconv_stages=[1, 2, 2, 3],
                     dropout=0.1,
                     use_residual_connections=True,
                     use_non_parametric=False,
                     use_edge_conv=False,
-                    learn_adj=False).to(device)
+                    learn_adj=True).to(device)
 
     print(gcn)
+    print_layers(gcn)
+    print(count_parameters(gcn), get_model_size(gcn))
 
     args = parser.parse_args()
 
