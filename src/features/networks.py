@@ -3,7 +3,7 @@ import torch
 from graph import Graph
 import numpy as np
 from common.model import *
-from features.layers import STGConv, GCNodeEdgeModule, SENet, GCN
+from features.layers import STGConv, GCNodeEdgeModule, SENet, GCN, Mlp
 from common.model import print_layers
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -89,8 +89,8 @@ class TGraphNet(nn.Module):
                     nin_e=nhid_e[i][0],
                     nhid_v=nhid_v[i][1],
                     nhid_e=nhid_e[i][1],
-                    adj_e=adj_e.to(device),
-                    adj_v=adj_v.to(device),
+                    adj_e=self.adj_e.to(device),
+                    adj_v=self.adj_v.to(device),
                     T=T.to(device),
                     n_in_frames=n_in_frames,
                     gcn_window=self.gcn_window[i],
@@ -102,7 +102,7 @@ class TGraphNet(nn.Module):
                     use_non_parametric=use_non_parametric,
                     use_edge_conv=use_edge_conv,
                     aggregate=aggregate[i],
-                    learn_adj=self.learn_adj),
+                    learn_adj=True if (i == n_stages - 1) else False),
                 )
 
         self.post_node = nn.Sequential(
@@ -192,6 +192,7 @@ class TGraphNetSeq(nn.Module):
         self.merging_layers = nn.ModuleList()
 
         self.post_node = nn.Conv2d(nhid_v[0][1], 3, kernel_size=(1, 5), stride=1, padding="same")
+        self.post_traj = nn.Conv2d(nhid_v[0][1], 3, kernel_size=(1, 5), stride=1, padding="same")
 
         n_stages = len(nhid_v)
         for i in range(n_stages):
@@ -350,9 +351,11 @@ class TGraphNetSeq(nn.Module):
 
             X = self.merge_norm(X.transpose(1, -1)).transpose(1, -1)
             X, _, _ = self.post_merge(X)
-            X = self.post_node(X.transpose(1, -1)).transpose(1, -1)
+            res = self.post_node(X.transpose(1, -1)).transpose(1, -1)
+            traj = self.post_traj(X.transpose(1, -1)[:, :, :1]).transpose(1, -1)
+            res[:, :, :1] = traj
 
-            return X
+            return res
 
 
 if __name__ == "__main__":

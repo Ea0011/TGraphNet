@@ -18,6 +18,7 @@ from evaluation import *
 from common.utils import Params, set_logger, copy_weight, load_checkpoint, save_checkpoint_pos_ori, write_log, get_lr, write_train_summary_scalars, write_val_summary_joint, log_gradients_in_model
 from common.model import print_layers, weight_init, count_parameters
 from data.h36m_dataset import Human36M
+from data.pw3d_dataset import PW3D
 from common.h36m_skeleton import joint_id_to_names
 from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq, eval_data_prepare
 import loss
@@ -86,18 +87,24 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         target_pose_3d[:, :, 0] = 0
         predicted_pos3d[:, :, 0] = 0
 
-        loss_pos = loss_fn[0](predicted_pos3d * 0.001, target_pose_3d * 0.001, torch.tensor([1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]).to(predicted_pos3d.device))
+        # cameras_train[:, 4:] = 0
+        # pred_cam[:, 4:] = 0
+
+        cam_loss = torch.tensor(0)
+        loss_pos = loss_fn[0](predicted_pos3d * 0.001, target_pose_3d * 0.001, torch.ones(17).to(predicted_pos3d.device))
         loss_dif = loss_fn[1](predicted_pos3d * 0.001, target_pose_3d * 0.001).to(predicted_pos3d.device)
         loss_velocity = loss_fn[2](predicted_pos3d * 0.001, target_pose_3d * 0.001, axis=1)
         loss_trajectory = loss_fn[0](pred_traj, inputs_traj, 1 / inputs_traj[:, :, :, 2])
         
-        pred_joints_cam = predicted_pos3d + inputs_traj
+        pred_joints_cam = predicted_pos3d + pred_traj
         pred_joints_img = normalize_screen_coordinates_torch(project_to_2d(pred_joints_cam, cameras_train), 1000, 1000)
+
+        traj_smoothness = loss_fn[1](pred_traj * 0.001, inputs_traj * 0.001)
 
         loss_proj = loss_fn[0](pred_joints_img, input_2d, torch.ones(17).to(pred_joints_img.device))
         # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
-        loss_train = loss_pos + 0.1 * loss_dif + loss_proj # + 2.0 * loss_velocity # + loss_trajectory
+        loss_train = loss_pos + loss_dif + loss_proj + 0.001 * traj_smoothness + loss_trajectory # + 2.0 * loss_velocity # + loss_proj # + 0.1 * traj_smoothnes # + cam_loss
 
         # update model
         optimizer.zero_grad()
@@ -106,7 +113,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         # if n_batches % params.save_summary_steps == 0:
         #     log_gradients_in_model(model, writer, int(f"{epoch+1}{n_batches}"))
 
-        nn.utils.clip_grad_value_(model.parameters(), clip_value=1.0)
+        # nn.utils.clip_grad_value_(model.parameters(), clip_value=1.0)
         optimizer.step()
 
         n_batches += 1
@@ -122,6 +129,17 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
             1
         )
 
+        err_vel_traj = metrics[1](
+            pred_traj.cpu().data,
+            inputs_traj.cpu().data,
+            1
+        )
+
+        err_traj = metrics[0](
+            inputs_traj.cpu().data,
+            pred_traj.cpu().data
+        )[0]
+
         # err_geodesic = metrics[1](
         #     predicted_angle_mat.cpu().data.numpy(),
         #     batch_angles_mat.cpu().data.numpy()
@@ -134,10 +152,13 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
             'train_loss_pos': loss_pos.item(),
             'train_loss_diff': loss_dif.item(),
             'train_loss_velocity': loss_velocity.item(),
-            # 'train_loss_angle': loss_angle.item(),
+            'loss_traj_motion': err_vel_traj.item(),
             'train_err_pos': err_pos.item(),
             'train_err_velocity': err_vel.item(),
+            'train_err_traj': err_traj.item(),
             'train_loss_proj': loss_proj.item(),
+            'train_loss_traj': loss_trajectory.item(),
+            'train_loss_motion_traj': traj_smoothness.item(),
             # 'train_err_geodesic': mean_geodesic_distance.item(),
             # 'train_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item()
             }
@@ -151,12 +172,13 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
                   'loss_pos: {:.4f}'.format(loss_pos.item()),
                   'loss_diff: {:.4f}'.format(loss_dif.item()),
                   'loss_velocity: {:.4f}'.format(loss_velocity.item()),
-                #   'loss_angles: {:.4f}'.format(loss_angle.item()),
+                  'loss_traj_motion: {:.4f}'.format(err_vel_traj.item()),
                   'train_err_pos: {:.4f}'.format(err_pos.item()),
                   'train_err_vel: {:.4f}'.format(err_vel.item()),
+                  'train_err_traj: {:.4f}'.format(err_traj.item()),
                   'train_loss_proj: {:.4f}'.format(loss_proj.item()),
-                #   'train_geodesic_err_wo_hip: {:.4f}'.format(mean_geodesic_error_without_hip.item()),
-                #   'train_geodesic_err: {:.4f}'.format(mean_geodesic_distance.item()),
+                  'train_loss_traj: {:.4f}'.format(loss_trajectory.item()),
+                  'train_loss_motion_traj: {:.4f}'.format(traj_smoothness.item()),
                   'time: {:.4f}s'.format(time.time() - t)
                   )
 
@@ -171,10 +193,12 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
     metrics_loss_diff_mean = np.mean([x['train_loss_diff'] for x in summary])
     metrics_loss_velocity_mean = np.mean([x['train_loss_velocity'] for x in summary])
     metrics_loss_proj_mean = np.mean([x['train_loss_proj'] for x in summary])
+    metrics_loss_traj_mean = np.mean([x['train_loss_traj'] for x in summary])
+    metrics_loss_traj_motion_mean = np.mean([x['train_loss_motion_traj'] for x in summary])
 
-    # metrics_loss_angle_mean = np.mean([x['train_loss_angle'] for x in summary])
-
+    metrics_err_traj_velocity = np.mean([x['loss_traj_motion'] for x in summary])
     metrics_err_pos_mean = np.mean([x['train_err_pos'] for x in summary], axis=0)
+    metrics_err_traj_mean = np.mean([x['train_err_traj'] for x in summary], axis=0)
     metrics_err_velocity_mean = np.mean([x['train_err_velocity'] for x in summary], axis=0)
 
     # metrics_geod_err_mean = np.mean([x['train_err_geodesic_wo_hip'] for x in summary], axis=0)
@@ -190,6 +214,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t" +
         "avg_err_velocity: {0:5.3f} ".format(metrics_err_velocity_mean) + "\t"
         "avg_loss_proj: {0:5.3f} ".format(metrics_loss_proj_mean) + "\t"
+        "avg_loss_traj_velocity: {0:5.3f}".format(metrics_err_traj_velocity) + "\t"
     )
 
     # for tensorboard
@@ -197,13 +222,16 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         'loss': {
             'train_loss': metrics_loss_mean,
             'train_loss_pos': metrics_loss_pos_mean,
-            'train_loss_diff': metrics_loss_diff_mean,
+            'train_loss_motion': metrics_loss_diff_mean,
             'train_loss_velocity': metrics_loss_velocity_mean,
-            # 'train_loss_angle': metrics_loss_angle_mean
+            'train_loss_traj': metrics_loss_traj_mean,
+            'train_traj_motion_loss': metrics_loss_traj_motion_mean,
         },
         'error': {
             'train_err_pos': metrics_err_pos_mean,
             'train_err_velocity': metrics_err_velocity_mean,
+            'train_err_traj': metrics_err_traj_mean,
+            'traj_err_traj_velocity': metrics_err_traj_velocity,
             # 'train_err_geod_w/o_hip': metrics_geod_err_mean,
             # 'train_err_geod_with_hip': metrics_geod_err_with_hip_mean
         }
@@ -228,70 +256,97 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     t = time.time()
     model.eval()
     summary = []
-    # t_errs = torch.zeros(81)
+    t_errs = torch.zeros(81)
     cnt = 0
 
+    total_mpjpe = 0
+    N = 0
+
     with torch.no_grad():
-        for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
+        for cameras_val, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
             input_2d = torch.FloatTensor(batch_2d).to(device)
             target_pose_3d = torch.FloatTensor(batch_3d).to(device)
+            cameras_val = torch.from_numpy(cameras_val.astype('float32')).to(device)
 
-            out_3d, input_2d = eval_data_prepare(params.in_frames, input_2d, target_pose_3d,)
-            target_pose_3d = out_3d.to(device)
-            input_2d = input_2d.to(device)
+            # out_3d, input_2d = eval_data_prepare(params.in_frames, input_2d, target_pose_3d,)
+            # target_pose_3d = out_3d.to(device)
+            # input_2d = input_2d.to(device)
+            # cameras_val = cameras_val.repeat(input_2d.shape[0], 1)
+
 
             middle_index = int((target_pose_3d.shape[1] - 1) / 2)
+            pad = 15
+            start_index = middle_index - pad
+            end_index = middle_index + pad + 1
             B, T, J, D = target_pose_3d.shape
 
             predicted_pos3d = model(input_2d)
-            predicted_pos3d_center = predicted_pos3d[:, middle_index].reshape(B, 1, J, D)
+            predicted_pos3d_center = predicted_pos3d[:, start_index:end_index].reshape(B, (2 * pad + 1), J, D)
 
             # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
             target_pose_3d = target_pose_3d.view_as(predicted_pos3d)
-            target_pose_3d_center = target_pose_3d[:, middle_index].reshape(B, 1, J, D)
-
-            # batch_size = input_2d.shape[0]
-            # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
-
-            # predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
-            # batch_angles_6d = torch.cat((hip_ori, target_angle_6d), dim=1)
-
-            # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
-            # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
+            target_pose_3d_center = target_pose_3d[:, start_index:end_index].reshape(B, (2 * pad + 1), J, D)
 
 
             inputs_traj = target_pose_3d[:, :, :1].clone()
             pred_traj = predicted_pos3d[:, :, :1].clone()
 
+            inputs_traj_center = inputs_traj[:, start_index:end_index]
+            pred_traj_center = pred_traj[:, start_index:end_index]
+
+
             # Train for root relative only this time around
             target_pose_3d[:, :, 0] = 0
             predicted_pos3d[:, :, 0] = 0
 
-            loss_pos = loss_fn[0](predicted_pos3d * 0.001, target_pose_3d * 0.001, torch.tensor([1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]).to(predicted_pos3d.device))
+            # cameras_val[:, 4:] = 0
+            # pred_cam[:, 4:] = 0
+
+            cam_loss = torch.tensor(0)
+            loss_pos = loss_fn[0](predicted_pos3d * 0.001, target_pose_3d * 0.001, torch.ones(17).to(predicted_pos3d.device))
             loss_dif = loss_fn[1](predicted_pos3d * 0.001, target_pose_3d * 0.001).to(predicted_pos3d.device)
             loss_velocity = loss_fn[2](predicted_pos3d * 0.001, target_pose_3d * 0.001, axis=1)
             loss_trajectory = loss_fn[0](pred_traj, inputs_traj, 1 / inputs_traj[:, :, :, 2])
 
+            pred_joints_cam = predicted_pos3d + pred_traj
+            pred_joints_img = normalize_screen_coordinates_torch(project_to_2d_linear(pred_joints_cam, cameras_val[:, :9]), 1000, 1000)
+
+            loss_proj = loss_fn[0](pred_joints_img, input_2d, torch.ones(17).to(pred_joints_img.device))
+
             # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
-            loss_val = loss_pos + 0.1 * loss_dif # + 2.0 * loss_velocity  # + loss_trajectory
+            loss_val = loss_pos + loss_dif # + 2.0 * loss_velocity # + loss_proj # + cam_loss
 
             err_pos = metrics[0](
                 predicted_pos3d_center.cpu().data,
                 target_pose_3d_center.cpu().data
             )[0]
 
+            total_mpjpe += err_pos * predicted_pos3d.shape[0] * predicted_pos3d.shape[1]
+            N += predicted_pos3d.shape[0] * predicted_pos3d.shape[1]
+
             err_vel = metrics[1](
-                predicted_pos3d.cpu().data,
-                target_pose_3d.cpu().data,
+                predicted_pos3d_center.cpu().data,
+                target_pose_3d_center.cpu().data,
                 1
             )
 
-            # t_err = metrics[2](
-            #     predicted_pos3d.cpu().data,
-            #     target_pose_3d.cpu().data,
-            # )[-1]
+            err_vel_traj = metrics[1](
+                inputs_traj_center.cpu().data,
+                pred_traj_center.cpu().data,
+                1
+            )
 
-            # t_errs += t_err
+            err_traj = metrics[0](
+                inputs_traj_center.cpu().data,
+                pred_traj_center.cpu().data
+            )[0]
+
+            t_err = metrics[2](
+                predicted_pos3d.cpu().data,
+                target_pose_3d.cpu().data,
+            )[-1]
+
+            t_errs += t_err
 
             # err_geodesic = metrics[1](
             #     predicted_angle_mat.cpu().data.numpy(),
@@ -306,6 +361,11 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
                 'val_err_velocity': err_vel.item(),
                 'val_loss_diff': loss_dif.item(),
                 'val_loss_velocity': loss_velocity.item(),
+                'val_loss_traj': loss_trajectory.item(),
+                'val_err_traj': err_traj.item(),
+                'val_cam_loss': cam_loss.item(),
+                'val_loss_proj': loss_proj.item(),
+                'val_err_traj_vel': err_vel_traj.item(),
                 # 't_err': t_err[-1],
                 # 'val_err_geodesic': mean_geodesic_distance.item(),
                 # 'val_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item(),
@@ -314,12 +374,20 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
             summary.append(summary_batch)
             cnt += 1
 
-        # print(t_errs / cnt)
+            if cnt % params.save_summary_steps == 0:
+                print(summary_batch)
+
+        print(t_errs / cnt)
+        print(total_mpjpe / N)
 
     # mean metrics
     metrics_loss_mean = np.mean([x['val_loss'] for x in summary])
     metrics_err_pos_mean = np.mean([x['val_err_pos'] for x in summary], axis=0)
     metrics_err_velocity_mean = np.mean([x['val_err_velocity'] for x in summary], axis=0)
+    metrics_err_traj_mean = np.mean([x['val_err_traj'] for x in summary], axis=0)
+    metrics_err_traj_vel_mean = np.mean([x['val_err_traj_vel'] for x in summary])
+    metrics_loss_proj_mean = np.mean([x['val_loss_proj'] for x in summary])
+
 
     # metrics_geod_err_mean = np.mean([x['val_err_geodesic_wo_hip'] for x in summary], axis=0)
     # metrics_geod_err_with_hip_mean = np.mean([x['val_err_geodesic'] for x in summary], axis=0)
@@ -330,8 +398,11 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     logging.info("- Val metrics -\t" +
           "Epoch: " + str(epoch) + "\t" +
           "loss_mean: {0:5.7f} ".format(metrics_loss_mean) + "\t" +
+          "val_err_traj_vel: {0:5.7f} ".format(metrics_err_traj_vel_mean) + "\t" +
+          "loss_proj_mean: {0:5.7f} ".format(metrics_loss_proj_mean) + "\t" +
           "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t" +
           "avg_err_velocity: {0:5.3f} ".format(metrics_err_velocity_mean) + "\t"
+          "avg_err_traj: {0:5.3f} ".format(metrics_err_traj_mean) + "\t"
         #   "avg_err_geodesic: {0:5.3f} ".format(metrics_geod_err_mean)
           )
     # for joint_id in range(len(metrics_err_joint)):
@@ -340,11 +411,14 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     # for tensorboard
     summary_epoch = {
         'loss': {
-            'val_loss': metrics_loss_mean
+            'val_loss': metrics_loss_mean,
+            'val_loss_cam': metrics_err_traj_vel_mean,
+            'val_loss_proj': metrics_loss_proj_mean,
         },
         'error': {
             'val_err_pos': metrics_err_pos_mean,
             'val_err_velocity': metrics_err_velocity_mean,
+            'val_err_traj': metrics_err_traj_mean,
             # 'val_err_geod_w/o_hip': metrics_geod_err_mean,
             # 'val_err_geod_with_hip': metrics_geod_err_with_hip_mean
         }
@@ -549,12 +623,15 @@ def main():
 
     logging.info("Loading test dataset....")
     test_dataset = Human36M(data_dir=args.data_dir, train=False, ds_category=params.ds_category)
-    pos2d, pos3d, angles_6d, edge_features = test_dataset.pos2d, test_dataset.pos3d_centered, test_dataset.gt_angles_6d, test_dataset.edge_features
-    val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features,)
-    # val_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-    #                                        edge_feat=edge_features, chunk_length=1, pad=40, shuffle=False,)
+    # test_dataset = PW3D(data_file="../data/pw3d_test.pkl")
+    cam, pos2d, pos3d, angles_6d, edge_features = test_dataset.cam, test_dataset.pos2d, test_dataset.pos3d_centered, test_dataset.gt_angles_6d, test_dataset.edge_features
+    # cam, pos2d, pos3d, angles_6d, edge_features = test_dataset.cam, test_dataset.pos2d, test_dataset.pos3d, [], []
+    # val_generator = UnchunkedGenerator_Seq(cameras=cam, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features,)
+    val_generator = ChunkedGenerator_Seq2Seq(params.batch_size, cameras=cam, poses_2d=pos2d, poses_3d=pos3d,
+                                                   chunk_length=31, pad=25, out_all=True, shuffle=False,
+                                                   augment=False, reverse_aug=False,)
 
-    logging.info("Number of validation frames: {}".format(val_generator.num_frames()))
+    # logging.info(f"N Val Frames: {val_generator.num_frames()}, N Val Batches {val_generator.num_batches}")
     logging.info("- done.")
 
     logging.info("Loading model:")
@@ -628,7 +705,7 @@ def main():
     if train_test == "test":
         logging.info("Evaluating {}".format(exp))
         logging.info("Restoring from {}".format(params.restore_file))
-        load_checkpoint(params.restore_file, model, optimizer)
+        load_checkpoint(params.restore_file, model, optimizer=None)
         logging.info("- done.")
         val_metrics = evaluate(model, loss_fn, val_generator, metrics, params, epoch=0, writer=None, log_dict=None, exp=exp, detailed=True, viz=False, joint_dict=joint_id_to_names)
 

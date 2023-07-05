@@ -374,7 +374,7 @@ class Human36M:
                 cam_params['tangential_distortion']
             ))
             if actions != "all":
-                if not (actions in act):
+                if not (act in actions):
                     continue
 
             if camera != "all":

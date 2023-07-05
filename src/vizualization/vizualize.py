@@ -148,6 +148,9 @@ def plot_pred_and_gt_poses(gt_pos, pred_pos, gt_rot, pred_rot, action="", mpjpe=
 def plot_pose_animation(pred_pos3d, gt_pos3d, mpjpe_err=None, action="", num_frames=81, save_path=None):
     assert save_path is not None
 
+    fig = plt.figure(figsize=(12, 12))
+    ax = make_3d_axis(20, pos=int('11{}'.format(1)), n_ticks=5,)
+
     def animate(i):
         ax.clear()
         pred_pos = pred_pos3d[i]
@@ -160,12 +163,12 @@ def plot_pose_animation(pred_pos3d, gt_pos3d, mpjpe_err=None, action="", num_fra
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.set_zlabel("")
-        ax.set_ylim(-20, 20)
-        ax.set_xlim(-20, 20)
-        ax.set_zlim(-20, 20)
+        ax.set_ylim(-30, 30)
+        ax.set_xlim(-30, 30)
+        ax.set_zlim(-30, 30)
 
         plot_poses_only(gt_pos, pred_pos, f"{action} Frame: {i}", pos_err, ax=ax, x_offset=-10, y_offset=-4)
 
-    fig = plt.figure(figsize=(12, 12))
-    ax = make_3d_axis(20, pos=int('11{}'.format(1)), n_ticks=5,)
     ani = FuncAnimation(fig, animate, frames=num_frames, repeat=False, interval=10) #interval: Delay between frames in milliseconds
+
+    return ani
