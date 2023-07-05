@@ -4,6 +4,7 @@ from graph import Graph
 import numpy as np
 from common.model import *
 from features.layers import STGConv, GCNodeEdgeModule, SENet, GCN
+from common.model import print_layers
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -47,11 +48,11 @@ class TGraphNet(nn.Module):
         super(TGraphNet, self).__init__()
 
         g = Graph(17, 16, gcn_window[0], norm=True)()
-        adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_temp'])), g['adj_e_wtemp'], g['ne_mapping']
+        adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'],)), g['adj_e_wtemp'], g['ne_mapping']
         # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
-        self.adj_v = nn.Parameter(adj_v).to(device)
-        self.adj_e = nn.Parameter(adj_e).to(device)
+        self.adj_v = nn.Parameter(adj_v.to(device))
+        self.adj_e = nn.Parameter(adj_e.to(device))
         self.T = T.to(device)
         self.gcn_window = gcn_window
         self.tcn_window = tcn_window
@@ -71,7 +72,7 @@ class TGraphNet(nn.Module):
         n_stages = len(nhid_v)
         for i in range(n_stages):
             g = Graph(17, 16, gcn_window[i], norm=True)()
-            adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_temp'])), g['adj_e_wtemp'], g['ne_mapping']
+            adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'],)), g['adj_e_wtemp'], g['ne_mapping']
             # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
             self.layers.append(
@@ -95,25 +96,12 @@ class TGraphNet(nn.Module):
                     aggregate=aggregate[i]),
                 )
 
-        self.post_node = nn. Sequential(
-            SENet(dim=nhid_v[-1][-1]),
-            nn.Linear(nhid_v[-1][-1], n_outv)
-        )
+        # self.post_node = nn. Sequential(
+        #     SENet(dim=nhid_v[-1][-1]),
+        #     nn.Linear(nhid_v[-1][-1], n_outv)
+        # )
 
-        if use_edge_conv:
-            self.senet_edge = SENet(dim=nhid_e[-1][-1])
-            self.post_edge = nn.Sequential(
-                nn.Linear(n_outv * 17 + 16 * nhid_e[-1][-1], nhid_e[-1][-1]),
-                nn.ReLU(),
-                nn.Linear(nhid_e[-1][-1],  n_oute * 16)
-            )
-        else:
-            self.senet_edge = SENet(dim=nhid_v[-1][-1])
-            self.post_edge = nn.Sequential(
-                nn.Linear(n_outv * 17 + 17 * nhid_v[-1][-1], nhid_v[-1][-1]),
-                nn.ReLU(),
-                nn.Linear(nhid_v[-1][-1], n_oute * 16)
-            )
+        self.post_node = nn.Linear(nhid_v[-1][-1] * 17, 51)
 
     def forward(self, X, Z=None):
         if self.use_edge_conv:
@@ -143,14 +131,12 @@ class TGraphNet(nn.Module):
                 _, X, _ = self.layers[s](X)
 
             _, features, _ = self.layers[-1](X)
+            B, F, J, D = features.shape
+
+            features = features.reshape(B, J * D)
             X = self.post_node(features)
 
-            Z = self.senet_edge(features)
-            batch_size = Z.shape[0]
-            feat = torch.cat((X.view(batch_size, -1), Z.reshape(batch_size, -1)), axis=1)
-            Z = self.post_edge(feat).view(batch_size, 16, -1)
-
-            return X.view(batch_size, 17, -1), Z
+            return X.view(B, 17, -1)
 
 
 class TGraphNetSeq(nn.Module):
@@ -276,14 +262,12 @@ class TGraphNetSeq(nn.Module):
             X_down = X
 
             for s in range(len(self.downsample_layers) - 1):
-                print(X_down.shape)
                 downsample_out[s], X_down, _ = self.downsample_layers[s](X_down)
 
             downsample_out[-1], X, _ = self.downsample_layers[-1](X_down)
 
             for s in range(len(self.upsample_layers)):
                 skip = downsample_out.pop()
-                print(skip.shape, X.shape)
                 X = self.upsample_layers[s][0](X.transpose(1, -1)).transpose(1, -1)
                 X, _, _ = self.upsample_layers[s][1](X + skip)
 
@@ -291,16 +275,16 @@ class TGraphNetSeq(nn.Module):
 
 
 if __name__ == "__main__":
-    gcn = TGraphNetSeq(infeat_v=2,
+    gcn = TGraphNet(infeat_v=2,
                     infeat_e=4,
-                    nhid_v=[256, 256, 256, 256],
-                    nhid_e=[256, 256, 256, 256],
+                    nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
+                    nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     n_oute=6,
                     n_outv=3,
                     gcn_window=[3, 3, 3, 3],
                     tcn_window=[3, 3, 3, 3],
                     in_frames=81,
-                    num_groups=2,
+                    num_groups=3,
                     aggregate=[True] * 4,
                     gconv_stages=[1, 1, 1, 1],
                     dropout=0.25,
@@ -308,8 +292,9 @@ if __name__ == "__main__":
                     use_non_parametric=False,
                     use_edge_conv=False,)
 
-    for m in gcn.downsample_layers:
+    for m in gcn.layers:
         print(m.string())
 
-    print(gcn)
+    # print(gcn)
+    print_layers(gcn)
     print(count_parameters(gcn), get_model_size(gcn))

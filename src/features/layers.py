@@ -99,6 +99,42 @@ class NodeResidualBlock(nn.Module):
         return X
 
 
+class NodeTCNResidualBlock(nn.Module):
+    """
+    Residual block with two node-edge modules
+    """
+    def __init__(self, in_frames, nfeat_v, nhid_v, num_groups, dropout):
+        super(NodeTCNResidualBlock, self).__init__()
+        self.in_frames = in_frames
+        self.nhid_v = nhid_v
+        self.gcn = GCN(in_frames, nfeat_v, nhid_v, num_groups, dropout)
+        self.tcn = nn.Sequential(
+            nn.Conv2d(nhid_v, nhid_v, (1, 5), stride=1, padding="same"),  # hardcode at the moment
+            nn.BatchNorm2d(nhid_v),
+            nn.Dropout(dropout),
+        )
+
+        self.residual_flag = "same"
+
+        if (nfeat_v != nhid_v):
+            self.residual_flag = "diff"
+            self.residual_gc = GCN(in_frames, nfeat_v, nhid_v, num_groups, dropout)
+
+    def forward(self, X, adj_v):
+        if self.residual_flag == "same":
+            residual_X = X
+        else:
+            residual_X = self.residual_gc(X, adj_v)
+
+        sz = X.shape
+        X = self.gcn(X, adj_v).reshape(-1, self.in_frames, 17, self.nhid_v).transpose(1, -1)
+        X = self.tcn(X).transpose(1, -1).reshape(sz)
+
+        X = F.relu(X + residual_X)
+
+        return X
+
+
 class NodeEdgeTCN(nn.Module):
     def __init__(self, in_channels, out_channels, in_frames, kernel_size=(1, 7), stride=(1, 1), use_non_parametric=True, dropout=.0):
         super(NodeEdgeTCN, self).__init__()
@@ -350,7 +386,7 @@ class STGConv(nn.Module):
         self.graph_stages = nn.ModuleList()
         if residual:
             self.graph_stages.append(
-                GCResidualBlock(n_in_frames, nin_v, nin_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(n_in_frames, nin_v, nhid_v, self.num_groups, dropout)
+                GCResidualBlock(n_in_frames, nin_v, nin_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeTCNResidualBlock(n_in_frames, nin_v, nhid_v, self.num_groups, dropout)
             )
         else:
             self.graph_stages.append(
@@ -359,7 +395,7 @@ class STGConv(nn.Module):
         for s in range(num_stages - 1):
             if residual:
                 self.graph_stages.append(
-                    GCResidualBlock(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(n_in_frames, nhid_v, nhid_v, self.num_groups, dropout)
+                    GCResidualBlock(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeTCNResidualBlock(n_in_frames, nhid_v, nhid_v, self.num_groups, dropout)
                 )
             else:
                 self.graph_stages.append(

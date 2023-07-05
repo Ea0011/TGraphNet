@@ -38,7 +38,7 @@ def forward_backward_bench(model, optimizer, batch_size, n_frames, n_batches=1):
         batch_angles_6d = torch.randn((batch_size, 16, 6)).to(device)
 
         # print("1. Before forward pass: {}".format(torch.cuda.memory_allocated(device)))
-        predicted_pos3d, predicted_angle_6d = model(batch_pose_2d, batch_edge_feat)
+        predicted_pos3d = model(batch_pose_2d, batch_edge_feat)
         # print("2. After forward pass: {}".format(torch.cuda.memory_allocated(device)))
 
         # concat static hip orientation (zero) for ploss
@@ -83,7 +83,7 @@ if __name__ == "__main__":
                     nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     n_oute=6,
                     n_outv=3,
-                    gcn_window=[3, 3, 3, 3,],
+                    gcn_window=[1, 1, 1, 1,],
                     tcn_window=[3, 3, 3, 3,],
                     num_groups=3,
                     aggregate=[True, True, True, True,],

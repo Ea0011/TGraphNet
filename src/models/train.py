@@ -65,28 +65,28 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         input_2d = torch.FloatTensor(batch_2d).to(device)
         input_edge = torch.FloatTensor(batch_edge).to(device)
         target_pose_3d = torch.FloatTensor(batch_3d).to(device)
-        target_angle_6d = torch.FloatTensor(batch_6d).to(device)
+        # target_angle_6d = torch.FloatTensor(batch_6d).to(device)
 
-        predicted_pos3d, predicted_angle_6d = model(input_2d, input_edge)
+        predicted_pos3d = model(input_2d, input_edge)
         predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
         middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
-        target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
+        # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
         target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
 
-        batch_size = input_2d.shape[0]
-        hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
-        predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
-        batch_angles_6d = torch.cat((hip_ori, target_angle_6d), dim=1)
+        # batch_size = input_2d.shape[0]
+        # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
+        # predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
+        # batch_angles_6d = torch.cat((hip_ori, target_angle_6d), dim=1)
 
-        predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
-        batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
+        # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
+        # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
 
         loss_pos = loss_fn[0](predicted_pos3d, target_pose_3d)
-        loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
+        # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
-        loss_train = loss_pos + params.lambda_angle * loss_angle
+        loss_train = loss_pos  # + params.lambda_angle * loss_angle
 
         # update model
         optimizer.zero_grad()
@@ -95,7 +95,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         # if n_batches % params.save_summary_steps == 0:
         #     log_gradients_in_model(model, writer, int(f"{epoch+1}{n_batches}"))
 
-        nn.utils.clip_grad_value_(model.parameters(), clip_value=1.0)
+        # nn.utils.clip_grad_value_(model.parameters(), clip_value=2.0)
         optimizer.step()
 
         n_batches += 1
@@ -105,20 +105,20 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
             target_pose_3d.cpu().data
         )[0]
 
-        err_geodesic = metrics[1](
-            predicted_angle_mat.cpu().data.numpy(),
-            batch_angles_mat.cpu().data.numpy()
-        )
-        mean_geodesic_distance = np.mean(err_geodesic)
-        mean_geodesic_error_without_hip = np.mean(err_geodesic[1:])
+        # err_geodesic = metrics[1](
+        #     predicted_angle_mat.cpu().data.numpy(),
+        #     batch_angles_mat.cpu().data.numpy()
+        # )
+        # mean_geodesic_distance = np.mean(err_geodesic)
+        # mean_geodesic_error_without_hip = np.mean(err_geodesic[1:])
 
         summary_batch = {
             'train_loss': loss_train.item(),
             'train_loss_pos': loss_pos.item(),
-            'train_loss_angle': loss_angle.item(),
+            # 'train_loss_angle': loss_angle.item(),
             'train_err_pos': err_pos.item(),
-            'train_err_geodesic': mean_geodesic_distance.item(),
-            'train_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item()
+            # 'train_err_geodesic': mean_geodesic_distance.item(),
+            # 'train_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item()
             }
 
         summary.append(summary_batch)
@@ -128,10 +128,10 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
                   'Batch: {}/{}'.format(n_batches, num_batches),
                   'loss_train: {:.4f}'.format(loss_train.item()),
                   'loss_pos: {:.4f}'.format(loss_pos.item()),
-                  'loss_angles: {:.4f}'.format(loss_angle.item()),
+                #   'loss_angles: {:.4f}'.format(loss_angle.item()),
                   'train_err_pos: {:.4f}'.format(err_pos.item()),
-                  'train_geodesic_err_wo_hip: {:.4f}'.format(mean_geodesic_error_without_hip.item()),
-                  'train_geodesic_err: {:.4f}'.format(mean_geodesic_distance.item()),
+                #   'train_geodesic_err_wo_hip: {:.4f}'.format(mean_geodesic_error_without_hip.item()),
+                #   'train_geodesic_err: {:.4f}'.format(mean_geodesic_distance.item()),
                   'time: {:.4f}s'.format(time.time() - t)
                   )
 
@@ -143,11 +143,11 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
     # mean metrics
     metrics_loss_mean = np.mean([x['train_loss'] for x in summary])
     metrics_loss_pos_mean = np.mean([x['train_loss_pos'] for x in summary])
-    metrics_loss_angle_mean = np.mean([x['train_loss_angle'] for x in summary])
+    # metrics_loss_angle_mean = np.mean([x['train_loss_angle'] for x in summary])
 
     metrics_err_pos_mean = np.mean([x['train_err_pos'] for x in summary], axis=0)
-    metrics_geod_err_mean = np.mean([x['train_err_geodesic_wo_hip'] for x in summary], axis=0)
-    metrics_geod_err_with_hip_mean = np.mean([x['train_err_geodesic'] for x in summary], axis=0)
+    # metrics_geod_err_mean = np.mean([x['train_err_geodesic_wo_hip'] for x in summary], axis=0)
+    # metrics_geod_err_with_hip_mean = np.mean([x['train_err_geodesic'] for x in summary], axis=0)
 
     # Logging
     # for log file
@@ -156,9 +156,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         "Epoch: " + str(epoch) + "\t" +
         "loss: {0:5.7f} ".format(metrics_loss_mean) + "\t" +
         "loss_pos: {0:5.7f} ".format(metrics_loss_pos_mean) + "\t" +
-        "loss_angle: {0:5.7f} ".format(metrics_loss_angle_mean) + "\t" +
-        "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t" +
-        "avg_err_geodesic: {0:5.3f} ".format(metrics_geod_err_mean)
+        "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t"
     )
 
     # for tensorboard
@@ -166,12 +164,12 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         'loss': {
             'train_loss': metrics_loss_mean,
             'train_loss_pos': metrics_loss_pos_mean,
-            'train_loss_angle': metrics_loss_angle_mean
+            # 'train_loss_angle': metrics_loss_angle_mean
         },
         'error': {
             'train_err_pos': metrics_err_pos_mean,
-            'train_err_geod_w/o_hip': metrics_geod_err_mean,
-            'train_err_geod_with_hip': metrics_geod_err_with_hip_mean
+            # 'train_err_geod_w/o_hip': metrics_geod_err_mean,
+            # 'train_err_geod_with_hip': metrics_geod_err_with_hip_mean
         }
     }
 
@@ -184,7 +182,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
 
     # for log dict
     log_dict['train_losses'].append(metrics_loss_mean)
-    log_dict['train_geod_errors'].append(metrics_geod_err_mean)
+    # log_dict['train_geod_errors'].append(metrics_geod_err_mean)
     log_dict['train_pos_errors'].append(metrics_err_pos_mean)
 
     return metrics_loss_mean
@@ -204,51 +202,51 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
 
             out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, target_pose_3d, target_angle_6d)
             target_pose_3d = out_3d.to(device)
-            target_angle_6d = out_6d.to(device)
+            # target_angle_6d = out_6d.to(device)
             input_edge = input_edge.to(device)
             input_2d = input_2d.to(device)
 
-            predicted_pos3d, predicted_angle_6d = model(input_2d, input_edge)
+            predicted_pos3d = model(input_2d, input_edge)
             predicted_pos3d[:, 0] = 0 # 0 out hip pos
 
             middle_index = int((target_pose_3d.shape[1] - 1) / 2)
 
-            target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
+            # target_angle_6d = target_angle_6d[:, middle_index].view_as(predicted_angle_6d)
             target_pose_3d = target_pose_3d[:, middle_index].view_as(predicted_pos3d)
 
-            batch_size = input_2d.shape[0]
-            hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
+            # batch_size = input_2d.shape[0]
+            # hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
 
-            predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
-            batch_angles_6d = torch.cat((hip_ori, target_angle_6d), dim=1)
+            # predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
+            # batch_angles_6d = torch.cat((hip_ori, target_angle_6d), dim=1)
 
-            predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
-            batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
+            # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
+            # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
 
             loss_pos = loss_fn[0](predicted_pos3d, target_pose_3d)
-            loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
+            # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
-            loss_val = loss_pos + params.lambda_angle * loss_angle
+            loss_val = loss_pos  # + params.lambda_angle * loss_angle
 
             err_pos, err_pos_joint = metrics[0](
                 predicted_pos3d.cpu().data,
                 target_pose_3d.cpu().data
             )
 
-            err_geodesic = metrics[1](
-                predicted_angle_mat.cpu().data.numpy(),
-                batch_angles_mat.cpu().data.numpy()
-            )
-            mean_geodesic_distance = np.mean(err_geodesic)
-            mean_geodesic_error_without_hip = np.mean(err_geodesic[1:])
+            # err_geodesic = metrics[1](
+            #     predicted_angle_mat.cpu().data.numpy(),
+            #     batch_angles_mat.cpu().data.numpy()
+            # )
+            # mean_geodesic_distance = np.mean(err_geodesic)
+            # mean_geodesic_error_without_hip = np.mean(err_geodesic[1:])
 
             summary_batch = {
                 'val_loss': loss_val.item(),
                 'val_err_pos': err_pos.item(),
                 'val_err_pos_joint': err_pos_joint.cpu().data.numpy(),
-                'val_err_geodesic': mean_geodesic_distance.item(),
-                'val_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item(),
-                'per_joint_geod_err': err_geodesic
+                # 'val_err_geodesic': mean_geodesic_distance.item(),
+                # 'val_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item(),
+                # 'per_joint_geod_err': err_geodesic
             }
             summary.append(summary_batch)
 
@@ -257,20 +255,20 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     metrics_err_pos_mean = np.mean([x['val_err_pos'] for x in summary], axis=0)
     metrics_err_joint = np.mean([x['val_err_pos_joint'] for x in summary], axis=0).astype(np.float64)
 
-    metrics_geod_err_mean = np.mean([x['val_err_geodesic_wo_hip'] for x in summary], axis=0)
-    metrics_geod_err_with_hip_mean = np.mean([x['val_err_geodesic'] for x in summary], axis=0)
-    metrics_geod_err_per_joint = np.mean([x['per_joint_geod_err'] for x in summary], axis=0)
+    # metrics_geod_err_mean = np.mean([x['val_err_geodesic_wo_hip'] for x in summary], axis=0)
+    # metrics_geod_err_with_hip_mean = np.mean([x['val_err_geodesic'] for x in summary], axis=0)
+    # metrics_geod_err_per_joint = np.mean([x['per_joint_geod_err'] for x in summary], axis=0)
 
     # Log entries
     # for log file
     logging.info("- Val metrics -\t" +
           "Epoch: " + str(epoch) + "\t" +
           "loss: {0:5.7f} ".format(metrics_loss_mean) + "\t" +
-          "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t" +
-          "avg_err_geodesic: {0:5.3f} ".format(metrics_geod_err_mean)
+          "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t"
+        #   "avg_err_geodesic: {0:5.3f} ".format(metrics_geod_err_mean)
           )
-    for joint_id in range(len(metrics_err_joint)):
-        logging.info("{0}:\t pos_err: {1:5.3f}\t geod_err: {2:5.3f}".format(joint_dict[joint_id], metrics_err_joint[joint_id], metrics_geod_err_per_joint[joint_id]))
+    # for joint_id in range(len(metrics_err_joint)):
+    #     logging.info("{0}:\t pos_err: {1:5.3f}\t geod_err: {2:5.3f}".format(joint_dict[joint_id], metrics_err_joint[joint_id], metrics_geod_err_per_joint[joint_id]))
 
     # for tensorboard
     summary_epoch = {
@@ -279,34 +277,34 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
         },
         'error': {
             'val_err_pos': metrics_err_pos_mean,
-            'val_err_geod_w/o_hip': metrics_geod_err_mean,
-            'val_err_geod_with_hip': metrics_geod_err_with_hip_mean
+            # 'val_err_geod_w/o_hip': metrics_geod_err_mean,
+            # 'val_err_geod_with_hip': metrics_geod_err_with_hip_mean
         }
     }
     summary_epoch["joint"] = {}
     summary_epoch["joint"]["val_pos"] = {}
     summary_epoch["joint"]["val_geod"] = {}
-    for idx in range(metrics_geod_err_per_joint.shape[0]):
+    for idx in range(metrics_err_joint.shape[0]):
         if joint_dict[idx] not in summary_epoch["joint"]["val_geod"]:
-            summary_epoch["joint"]["val_geod"][joint_dict[idx]] = {}
+            # summary_epoch["joint"]["val_geod"][joint_dict[idx]] = {}
             summary_epoch["joint"]["val_pos"][joint_dict[idx]] = {}
 
-        summary_epoch["joint"]["val_geod"][joint_dict[idx]] = metrics_geod_err_per_joint[idx]
+        # summary_epoch["joint"]["val_geod"][joint_dict[idx]] = metrics_geod_err_per_joint[idx]
         summary_epoch["joint"]["val_pos"][joint_dict[idx]] = metrics_err_joint[idx]
 
     # for log dict
     if log_dict:
         log_dict['val_losses'].append(metrics_loss_mean)
-        log_dict['val_geod_errors'].append(metrics_geod_err_with_hip_mean)
+        # log_dict['val_geod_errors'].append(metrics_geod_err_with_hip_mean)
         log_dict['val_pos_errors'].append(metrics_err_pos_mean)
 
-        for idx in range(metrics_geod_err_per_joint.shape[0]):
-            if joint_dict[idx] not in log_dict['val_geod_errors_joints']:
-                log_dict['val_geod_errors_joints'][joint_dict[idx]] = []
+        for idx in range(metrics_err_joint.shape[0]):
+            # if joint_dict[idx] not in log_dict['val_geod_errors_joints']:
+            #     log_dict['val_geod_errors_joints'][joint_dict[idx]] = []
             if joint_dict[idx] not in log_dict['val_pos_errors_joints']:
                 log_dict['val_pos_errors_joints'][joint_dict[idx]] = []
 
-            log_dict['val_geod_errors_joints'][joint_dict[idx]].append(metrics_geod_err_per_joint[idx])
+            # log_dict['val_geod_errors_joints'][joint_dict[idx]].append(metrics_geod_err_per_joint[idx])
             log_dict['val_pos_errors_joints'][joint_dict[idx]].append(metrics_err_joint[idx])
 
     # Update tensorboard writer
@@ -316,53 +314,7 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
                                 summary_epoch=summary_epoch,
                                 detailed=True)
 
-    return {'val_err': metrics_err_pos_mean, 'val_geod_err': metrics_geod_err_with_hip_mean}
-
-
-def validate_and_save(model, loss_fn, val_generator, metrics, params, epoch, writer, log_dict, exp, detailed=False, viz=False, joint_dict=None):
-    t1 = time.time()
-    val_metrics = evaluate(model, loss_fn, val_generator, metrics, params, epoch, writer, log_dict, exp, detailed=False, viz=viz, joint_dict=joint_dict)
-    logging.info("Epoch {} validation time: {}".format(epoch, strftime("%H:%M:%S", gmtime(time.time() - t1))))
-    val_err = val_metrics['val_err']
-    val_geod_err = val_metrics['val_geod_err']
-
-    if epoch > params.start_epoch:
-        is_best = (val_err <= best_val_err) and (val_geod_err <= best_val_geod_err)
-        is_best_pos = val_err <= best_val_err
-        is_best_ori = val_geod_err <= best_val_geod_err
-    elif epoch == 0:
-        best_val_err = val_err
-        best_val_geod_err = val_geod_err
-
-    # If best_eval, best_save_path
-    if is_best:
-        logging.info("- Found new min validation error")
-        best_val_err = val_err
-        best_val_geod_err = val_geod_err
-        log_dict['best_val_err'] = {"epoch": epoch, "err": best_val_err, "geod_err": best_val_geod_err}
-
-    if is_best_pos:
-        best_val_err = val_err
-        log_dict['best_val_err_pos'] = {"epoch": epoch, "err": best_val_err}
-        logging.info("- Found new min validation pos error")
-
-    if is_best_ori:
-        best_val_geod_err = val_geod_err
-        log_dict['best_val_err_ori'] = {"epoch": epoch, "geod_err": best_val_geod_err}
-        logging.info("- Found new min validation ori error")
-
-    # # Save weights
-    save_checkpoint_pos_ori({'epoch': epoch,
-                             'state_dict': model.state_dict(),
-                             'optim_dict': optimizer.state_dict(),
-                             'lr_dict': scheduler.state_dict(),
-                             'last_best_err': best_val_err,
-                             'last_best_geod_err': best_val_geod_err,
-                             },
-                            is_best=is_best,
-                            is_best_pos=is_best_pos,
-                            is_best_ori=is_best_ori,
-                            checkpoint=model_dir)
+    return {'val_err': metrics_err_pos_mean, 'val_geod_err': 0}
 
 
 def train_and_evaluate(model, train_generator, val_generator, optimizer, scheduler, loss_fn, metrics, params,
@@ -395,13 +347,13 @@ def train_and_evaluate(model, train_generator, val_generator, optimizer, schedul
     log_dict['train_geod_errors'] = []
     log_dict['train_pos_errors'] = []
     log_dict['val_losses'] = []
-    log_dict['val_geod_errors'] = []
+    # log_dict['val_geod_errors'] = []
     log_dict['val_pos_errors'] = []
-    log_dict['val_geod_errors_joints'] = {}
+    # log_dict['val_geod_errors_joints'] = {}
     log_dict['val_pos_errors_joints'] = {}
 
-    for joint_id in range(params.num_joints):
-        log_dict['val_geod_errors_joints'][joint_dict[joint_id]] = []
+    # for joint_id in range(params.num_joints):
+    #     log_dict['val_geod_errors_joints'][joint_dict[joint_id]] = []
 
     for epoch in range(params.start_epoch, end_epoch):
         logging.info("Epoch {}/{}".format(epoch, end_epoch-1))
@@ -614,7 +566,7 @@ def main():
     if train_test == "test":
         logging.info("Evaluating {}".format(exp))
         logging.info("Restoring from {}".format(params.restore_file))
-        load_checkpoint(params.restore_file, model,)
+        load_checkpoint(params.restore_file, model, optimizer)
         logging.info("- done.")
         val_metrics = evaluate(model, loss_fn, val_generator, metrics, params, epoch=0, writer=None, log_dict=None, exp=exp, detailed=True, viz=False, joint_dict=joint_id_to_names)
 

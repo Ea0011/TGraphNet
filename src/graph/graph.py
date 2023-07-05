@@ -336,7 +336,7 @@ class Graph:
 
 
 if __name__ == "__main__":
-    adjs = Graph(num_joints=17, num_edges=16, num_frames=3, norm=True)()
+    adjs = Graph(num_joints=17, num_edges=16, num_frames=1, norm=True)()
     grp = torch.stack((adjs['adj_v_further'], adjs['adj_v']))
-    plot_adjacency_matrix(grp[1], annotate_frames=True, annotate_values=True, node_names=get_node_names(3))
+    plot_adjacency_matrix(grp[0], annotate_frames=False, annotate_values=True, node_names=get_node_names(1))
     # plot_node_to_edge_map(ajds["adj_v_close"], num_frames=3, annotate_frames=False, node_names=get_node_names(3), edge_names=get_edge_names(3))
