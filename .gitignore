@@ -1,0 +1,10 @@
+*.tar
+*.out
+*.err
+runs/*
+out/*
+data/*.npz
+code/__pycache__
+*/*/__pycache__/
+*/__pycache__/
+.vscode
