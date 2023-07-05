@@ -59,6 +59,9 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     cnt = 0
 
     total_mpjpe = 0
+    total_err_x = 0
+    total_err_y = 0
+    total_err_z = 0
     N = 0
 
     with torch.no_grad():
@@ -99,13 +102,19 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
             # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
             loss_val = loss_pos + loss_dif # + 2.0 * loss_velocity # + loss_proj # + cam_loss
 
+            err_x, err_y, err_z = per_axis_mpjpe(pred_traj_center.reshape(-1, 1, 1, 3), inputs_traj_center.reshape(-1, 1, 1, 3))
+
+            total_err_x += err_x * predicted_pos3d_center.shape[0] * predicted_pos3d_center.shape[1]
+            total_err_y += err_y * predicted_pos3d_center.shape[0] * predicted_pos3d_center.shape[1]
+            total_err_z += err_z * predicted_pos3d_center.shape[0] * predicted_pos3d_center.shape[1]
+
             err_pos = metrics[0](
                 predicted_pos3d_center.cpu().data,
                 target_pose_3d_center.cpu().data
             )[0]
 
             total_mpjpe += err_pos * predicted_pos3d.shape[0] * predicted_pos3d.shape[1]
-            N += predicted_pos3d.shape[0] * predicted_pos3d.shape[1]
+            N += predicted_pos3d_center.shape[0] * predicted_pos3d_center.shape[1]
 
             err_vel = metrics[1](
                 predicted_pos3d_center.cpu().data,
@@ -157,7 +166,9 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
                 print(summary_batch)
 
         print(t_errs / cnt)
-        print(total_mpjpe / N)
+        print("X err", total_err_x / N)
+        print("Y err", total_err_y / N)
+        print("Z err", total_err_z / N)
 
     # mean metrics
     metrics_loss_mean = np.mean([x['val_loss'] for x in summary])
@@ -182,7 +193,7 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     auc_min = 0.0
     auc_max = 155.0
 
-    auc_range = np.arange(auc_min, auc_max, 5)
+    auc_range = np.arange(auc_min, auc_max, 1)
     pck_aucs_14j = []
     pck_aucs = []
     for pck_thresh_ in auc_range:
@@ -199,14 +210,10 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     logging.info("- Val metrics -\t" +
           "Epoch: " + str(epoch) + "\t" +
           "loss_mean: {0:5.7f} ".format(metrics_loss_mean) + "\t" +
-          "val_err_traj_vel: {0:5.7f} ".format(metrics_err_traj_vel_mean) + "\t" +
           "avg_err_pos: {0:5.3f} ".format(metrics_err_pos_mean) + "\t" +
-          "avg_err_velocity: {0:5.3f} ".format(metrics_err_velocity_mean) + "\t" +
           "avg_err_traj: {0:5.3f} ".format(metrics_err_traj_mean) + "\t" +
           "avg_pck: {0:5.3f}".format(pck_all) + "\t" +
-          "avg_pck_14j: {0:5.3f}".format(pck_14j) + "\t" +
-          "auc: {0:5.3f}".format(auc_final) + "\t" +
-          "auc_14j: {0:5.3f}".format(auc_final_14j) + "\t"
+          "auc: {0:5.3f}".format(auc_final) + "\t"
           )
 
     # for tensorboard
@@ -298,7 +305,7 @@ def main():
     #                                                chunk_length=31, pad=25, out_all=True, shuffle=False,
     #                                                augment=False, reverse_aug=False,)
 
-    val_generator = ChunkedGeneratorDHP(64, cameras=None, poses_2d=pos2d, poses_3d=pos3d,
+    val_generator = ChunkedGeneratorDHP(256, cameras=None, poses_2d=pos2d, poses_3d=pos3d,
                               valid_frame=valid_frame, train=False,
                                                    chunk_length=1, pad=40, out_all=True, shuffle=False,
                                                    augment=False, reverse_aug=False,)

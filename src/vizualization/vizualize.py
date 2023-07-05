@@ -107,7 +107,7 @@ def text3d(ax, xyz, s, zdir="z", size=None, angle=0, usetex=False, **kwargs):
     art3d.pathpatch_2d_to_3d(p1, z=z1, zdir=zdir)
 
 
-def plot_pose_and_orientation(pos3d, rot, edges, colors=['red'], pose_scale=60, rot_ax_scale=2, rot_ax_width=3, x_offset=10, y_offset=4, ax=None):
+def plot_pose_and_orientation(pos3d, rot, edges, colors=['red'], pose_scale=60, rot_ax_scale=2, rot_ax_width=3, x_offset=10, y_offset=4, alpha=1., lw=4, ax=None):
     pos3d /= pose_scale
     pos3d[:, 0] += x_offset # translate X
     pos3d[:, 1] += y_offset # translate Y
@@ -123,18 +123,25 @@ def plot_pose_and_orientation(pos3d, rot, edges, colors=['red'], pose_scale=60, 
         j1 = pos3d[e[0]]
         j2 = pos3d[e[1]]
         if joint_id_to_names[int(e[0])].startswith("L"):
-            ax.plot([j1[0], j2[0]], [j1[1], j2[1]], [j1[2], j2[2]], linestyle='-', color=colors[1], linewidth=5)
+            ax.plot([j1[0], j2[0]], [j1[1], j2[1]], [j1[2], j2[2]], linestyle='-', color=colors[1], linewidth=lw, zorder=(j1[2] + j2[2])/2, alpha=alpha)
         else:
-            ax.plot([j1[0], j2[0]], [j1[1], j2[1]], [j1[2], j2[2]], linestyle='-', color=colors[0], linewidth=5)
+            ax.plot([j1[0], j2[0]], [j1[1], j2[1]], [j1[2], j2[2]], linestyle='-', color=colors[0], linewidth=lw, zorder=(j1[2] + j2[2])/2, alpha=alpha)
 
 
-def plot_poses_only(gt_pos, pred_pos, action="", mpjpe=0, pose_scale=60, x_offset=10, y_offset=4, ax=None):
-    ax.text(0, 14, 0, f"Action: {action}", zdir="x", color="blue", fontweight="normal", horizontalalignment="center", fontsize=22)
-    ax.text(0, 12, 0, f"MPJPE: {mpjpe:.1f}mm", zdir="x", color="black", fontweight="normal", horizontalalignment="center", fontsize=20)
+def plot_poses_only(gt_pos, pred_pos, action="", mpjpe=0, pose_scale=60, x_offset=10, y_offset=4, text_y = 16, ax=None):
+    ax.text(0, text_y, 0, f"", zdir="x", color="green", fontweight="bold", horizontalalignment="center", fontsize=24)
+    ax.text(0, text_y - 2, 0, f"MPJPE: {mpjpe:.1f}mm", zdir="x", color="royalblue", fontweight="bold", horizontalalignment="center", fontsize=20)
 
     plot_pose_and_orientation(-gt_pos, None, edges=edge_index, colors=['limegreen', 'orange'], pose_scale=pose_scale, x_offset=-x_offset, y_offset=y_offset, ax=ax)
     plot_pose_and_orientation(-pred_pos, None, edges=edge_index,colors=['deepskyblue', 'hotpink'], pose_scale=pose_scale, x_offset=x_offset, y_offset=y_offset, ax=ax)
 
+
+def plot_poses_merged(gt_pos, pred_pos, action="", mpjpe=0, pose_scale=60, x_offset=0, y_offset=4, text_y = 16, ax=None):
+    ax.text(0, text_y, 0, f"Action: {action}", zdir="x", color="green", fontweight="bold", horizontalalignment="center", fontsize=24)
+    ax.text(0, text_y - 2, 0, f"MPJPE: {mpjpe:.1f}mm", zdir="x", color="royalblue", fontweight="bold", horizontalalignment="center", fontsize=20)
+
+    plot_pose_and_orientation(-gt_pos, None, edges=edge_index, colors=['red', 'red'], pose_scale=pose_scale, x_offset=-x_offset, y_offset=y_offset, alpha=0.8, lw=1.8, ax=ax)
+    plot_pose_and_orientation(-pred_pos, None, edges=edge_index,colors=['black', 'black'], pose_scale=pose_scale, x_offset=x_offset, y_offset=y_offset, alpha=0.6, lw=1.8, ax=ax)
 
 def plot_pred_and_gt_poses(gt_pos, pred_pos, gt_rot, pred_rot, action="", mpjpe=0, mpjae=0,pose_scale=60, rot_ax_scale=2, rot_ax_width=3, x_offset=10, y_offset=4, ax=None):
     ax.text(0, 14, 0, f"Action: {action}", zdir="x", color="blue", fontweight="normal", horizontalalignment="center", fontsize=22)

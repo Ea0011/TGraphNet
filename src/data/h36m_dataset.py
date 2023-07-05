@@ -374,7 +374,11 @@ class Human36M:
                 cam_params['tangential_distortion']
             ))
             if actions != "all":
-                if not (act in actions):
+                if not (actions in act):
+                    continue
+                
+                # WOW!
+                if (actions == "Sitting" and act == "SittingDown"):
                     continue
 
             if camera != "all":

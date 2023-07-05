@@ -3,7 +3,7 @@ import torch
 from graph import Graph
 import numpy as np
 from common.model import *
-from features.layers import STGConv, GCNodeEdgeModule, SENet, GCN, Mlp
+from features.layers import STGConv, GCNodeEdgeModule, SENet, GCN
 from common.model import print_layers
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -101,17 +101,16 @@ class TGraphNet(nn.Module):
                     residual=use_residual_connections,
                     use_non_parametric=use_non_parametric,
                     use_edge_conv=use_edge_conv,
-                    aggregate=aggregate[i],
-                    learn_adj=True if (i == n_stages - 1) else False),
+                    aggregate=aggregate[i],),
                 )
 
-        self.post_node = nn.Sequential(
-            SENet(dim=nhid_v[-1][-1]),
-            nn.Linear(nhid_v[-1][-1], n_outv)
-        )
+        # self.post_node = nn.Sequential(
+        #     SENet(dim=nhid_v[-1][-1]),
+        #     nn.Linear(nhid_v[-1][-1], n_outv)
+        # )
 
         # self.post_node = nn.Linear(nhid_v[-1][-1] * 17, 51)
-        # self.post_node = nn.Conv2d(nhid_v[-1][-1], 3, kernel_size=1)
+        self.post_node = nn.Conv2d(nhid_v[-1][-1], 3, kernel_size=1, padding="same")
 
     def forward(self, X, Z=None):
         if self.use_edge_conv:
@@ -144,7 +143,7 @@ class TGraphNet(nn.Module):
             B, F, J, D = features.shape
 
             # features = features.reshape(B, J * D)
-            X = self.post_node(features)
+            X = self.post_node(features.transpose(1, -1)).transpose(1, -1)
 
             return X
 
@@ -217,8 +216,7 @@ class TGraphNetSeq(nn.Module):
                     residual=use_residual_connections,
                     use_non_parametric=use_non_parametric,
                     use_edge_conv=use_edge_conv,
-                    aggregate=aggregate[i],
-                    learn_adj=learn_adj),
+                    aggregate=aggregate[i],),
                 )
 
         for i in range(n_stages - 1):
@@ -245,7 +243,6 @@ class TGraphNetSeq(nn.Module):
                         use_non_parametric=use_non_parametric,
                         use_edge_conv=use_edge_conv,
                         aggregate=False,
-                        learn_adj=learn_adj
                     ),
                     nn.Upsample(scale_factor=(1, self.tcn_window[-(i + 1)]), mode='bilinear', align_corners=True),
                 ))
@@ -275,7 +272,6 @@ class TGraphNetSeq(nn.Module):
                         use_non_parametric=use_non_parametric,
                         use_edge_conv=use_edge_conv,
                         aggregate=False,
-                        learn_adj=learn_adj
                     ),
                     nn.Upsample(scale_factor=(1, np.cumprod([1] + self.tcn_window)[-(i + 2)]), mode='bilinear', align_corners=True),
                 ))
@@ -299,7 +295,6 @@ class TGraphNetSeq(nn.Module):
             use_non_parametric=use_non_parametric,
             use_edge_conv=use_edge_conv,
             aggregate=False,
-            learn_adj=learn_adj
         )
         self.merge_norm = nn.BatchNorm2d(nhid_v[0][1])
 

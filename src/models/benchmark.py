@@ -16,7 +16,7 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser(description='Benchmark Parameters')
 parser.add_argument('--batch_size', metavar='B', type=int,
                     help='Batch size. Number of sequences in a singe input',
-                    default=32)
+                    default=64)
 parser.add_argument('--mode', help='which passes to benchmark', type=str, choices=['forward', 'both'], default="forward")
 parser.add_argument('--n_batches', help='number of batches', type=int, default=1)
 parser.add_argument('--n_measurements', help='number times to benchmark before report', type=int, default=1)
@@ -39,7 +39,8 @@ def forward_backward_bench(model, optimizer, batch_size, n_frames, n_batches=1):
         batch_angles_6d = torch.randn((batch_size, 16, 6)).to(device)
 
         # print("1. Before forward pass: {}".format(torch.cuda.memory_allocated(device)))
-        predicted_pos3d = model(batch_pose_2d, batch_edge_feat)
+        predicted_pos3d, pred_cam = model(batch_pose_2d, batch_edge_feat)
+        print(predicted_pos3d.shape)
         # print("2. After forward pass: {}".format(torch.cuda.memory_allocated(device)))
 
         # concat static hip orientation (zero) for ploss
@@ -78,25 +79,6 @@ def forward_bench(model, batch_size, n_frames):
 
 
 if __name__ == "__main__":
-    gcn = TGraphNet(infeat_v=2,
-                    infeat_e=4,
-                    nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
-                    nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
-                    n_oute=6,
-                    n_outv=3,
-                    gcn_window=[1, 1, 1, 1,],
-                    tcn_window=[3, 3, 3, 3,],
-                    num_groups=4,
-                    aggregate=[True] * 4,
-                    in_frames=81,
-                    gconv_stages=[1, 1, 1, 1],
-                    dropout=0.1,
-                    use_residual_connections=True,
-                    use_non_parametric=False,
-                    use_edge_conv=False,
-                    learn_adj=False).to(device)
-
-    # [[16, 32], [32, 64], [64, 128], [128, 256]]
     # gcn = TGraphNetSeq(infeat_v=2,
     #                 infeat_e=4,
     #                 nhid_v=[[256, 256], [256, 256], [256, 256], [256, 256]],
@@ -108,12 +90,31 @@ if __name__ == "__main__":
     #                 num_groups=4,
     #                 aggregate=[True] * 4,
     #                 in_frames=81,
-    #                 gconv_stages=[1, 2, 2, 3],
+    #                 gconv_stages=[1, 1, 1, 1],
     #                 dropout=0.1,
     #                 use_residual_connections=True,
     #                 use_non_parametric=False,
     #                 use_edge_conv=False,
-    #                 learn_adj=True).to(device)
+    #                 learn_adj=False).to(device)
+
+    # [[16, 32], [32, 64], [64, 128], [128, 256]]
+    gcn = TGraphNetSeq(infeat_v=2,
+                    infeat_e=4,
+                    nhid_v=[[2, 128], [128, 256]],
+                    nhid_e=[[2, 32], [32, 64], [64, 128]],
+                    n_oute=6,
+                    n_outv=3,
+                    gcn_window=[3, 3],
+                    tcn_window=[3, 3],
+                    num_groups=4,
+                    aggregate=[True, False],
+                    in_frames=9,
+                    gconv_stages=[3, 4],
+                    dropout=0.1,
+                    use_residual_connections=True,
+                    use_non_parametric=False,
+                    use_edge_conv=False,
+                    learn_adj=False).to(device)
 
     print(gcn)
     print_layers(gcn)
@@ -124,7 +125,7 @@ if __name__ == "__main__":
     if args.mode == "both":
         opt = optim.AdamW(gcn.parameters(), lr=0.001)
         t0 = benchmark.Timer(
-            stmt="forward_backward_bench(gcn, opt, {}, 81, {})".format(str(args.batch_size), str(args.n_batches)),
+            stmt="forward_backward_bench(gcn, opt, {}, 9, {})".format(str(args.batch_size), str(args.n_batches)),
             label="forward and backward pass benchmark on {} device".format(str(device)),
             globals={
                 'forward_backward_bench': forward_backward_bench,

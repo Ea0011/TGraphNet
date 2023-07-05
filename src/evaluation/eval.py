@@ -86,6 +86,13 @@ def accuracy_pck_2d(output, target, out_height=224, out_width=224, thr=0.5):
 
     return acc
 
+def per_axis_mpjpe(pred, gt):
+    err_x = torch.norm(pred[:, :, :, 0] - gt[:, :, :, 0], dim = -1)
+    err_y = torch.norm(pred[:, :, :, 1] - gt[:, :, :, 1], dim = -1)
+    err_z = torch.norm(pred[:, :, :, 2] - gt[:, :, :, 2], dim = -1)
+
+    return torch.mean(err_x), torch.mean(err_y), torch.mean(err_z)
+
 
 def mpjpe(predicted, target):
     """

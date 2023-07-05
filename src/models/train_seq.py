@@ -87,10 +87,6 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         target_pose_3d[:, :, 0] = 0
         predicted_pos3d[:, :, 0] = 0
 
-        # cameras_train[:, 4:] = 0
-        # pred_cam[:, 4:] = 0
-
-        cam_loss = torch.tensor(0)
         loss_pos = loss_fn[0](predicted_pos3d * 0.001, target_pose_3d * 0.001, torch.ones(17).to(predicted_pos3d.device))
         loss_dif = loss_fn[1](predicted_pos3d * 0.001, target_pose_3d * 0.001,).to(predicted_pos3d.device)
         # loss_dif = loss_fn[-1](predicted_pos3d * 0.001, torch.ones(17).to(predicted_pos3d.device))
@@ -105,7 +101,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         loss_proj = loss_fn[0](pred_joints_img, input_2d, torch.ones(17).to(pred_joints_img.device))
         # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
-        loss_train = loss_pos + loss_dif # + loss_trajectory + loss_proj # + 0.001 * traj_smoothness + loss_trajectory  # + loss_velocity # + loss_proj + 0.001 * traj_smoothness + loss_trajectory # + 2.0 * loss_velocity # + loss_proj # + 0.1 * traj_smoothnes # + cam_loss
+        loss_train = loss_pos + loss_dif # + loss_trajectory + loss_proj + 0.001 * traj_smoothness # + loss_trajectory  # + loss_velocity # + loss_proj + 0.001 * traj_smoothness + loss_trajectory # + 2.0 * loss_velocity # + loss_proj # + 0.1 * traj_smoothnes # + cam_loss
 
         # update model
         optimizer.zero_grad()

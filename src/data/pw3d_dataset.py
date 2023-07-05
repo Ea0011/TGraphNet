@@ -33,8 +33,6 @@ class PW3D:
             self.pos3d.append(np.array(d['pos3d']))
             self.cam.append(np.array(d['cam']))
 
-            break
-
 
 if __name__ == "__main__":
     test_data = PW3D("../data/pw3d_test.pkl", actions=['downtown_walkBridge_01_0'])
