@@ -48,13 +48,19 @@ class Graph:
                             (8,14), (14,15), (15,16) # Rarm
                         ]
 
-        edges = self_link + neighbour_link
+        sym_link = [
+            (1,4), (2,5), (3,6), # legs
+            (14, 11), (15, 12), (16,13) # arms
+        ]
+
+        edges = self_link + neighbour_link + sym_link
 
         # initializing the matrix
         spatial_adjecency = torch.zeros(self.num_joints, self.num_joints)
         a_root = torch.zeros((self.num_joints, self.num_joints))
         a_close = torch.zeros((self.num_joints, self.num_joints))
         a_further = torch.zeros((self.num_joints, self.num_joints))
+        a_sym = torch.zeros((self.num_joints, self.num_joints))
         for e in edges:
             source, sink = e
             spatial_adjecency[source, sink] = spatial_adjecency[sink, source] = 1
@@ -62,14 +68,9 @@ class Graph:
             for j in range(self.num_joints):
                 if (i, j) not in edges and (j, i) not in edges:
                     continue
-                if self.dist_center[j] == self.dist_center[i]:
-                    a_root[j, i] = 1
-                elif self.dist_center[j] > self.dist_center[i]:
-                    a_close[j, i] = 1
-                else:
-                    a_further[j, i] = 1
-
-                if self.dist_center[j] == self.dist_center[i]:
+                if (i, j) in sym_link or (j, i) in sym_link:
+                    a_sym[i, j] = a_sym[j, i] = 1
+                elif self.dist_center[j] == self.dist_center[i]:
                     a_root[j, i] = 1
                 elif self.dist_center[j] > self.dist_center[i]:
                     a_close[j, i] = 1
@@ -80,6 +81,7 @@ class Graph:
         A_root = torch.zeros(self.num_frames * self.num_joints, self.num_frames * self.num_joints)
         A_close = torch.zeros(self.num_frames * self.num_joints, self.num_frames * self.num_joints)
         A_further = torch.zeros(self.num_frames * self.num_joints, self.num_frames * self.num_joints)
+        A_sym = torch.zeros(self.num_frames * self.num_joints, self.num_frames * self.num_joints)
 
         # init spatial connections
         for i in range(self.num_frames):
@@ -88,8 +90,9 @@ class Graph:
             A_root[frame:frame+self.num_joints, frame:frame+self.num_joints] = a_root.clone()
             A_close[frame:frame+self.num_joints, frame:frame+self.num_joints] = a_close.clone()
             A_further[frame:frame+self.num_joints, frame:frame+self.num_joints] = a_further.clone()
+            A_sym[frame:frame+self.num_joints, frame:frame+self.num_joints] = a_sym.clone()
 
-        return A, A_root, A_close, A_further
+        return A, A_root, A_close, A_further, A_sym
 
     def get_temporal_adjacency(self, num_joints):
         """
@@ -287,7 +290,7 @@ class Graph:
         temporal_adj_v = temporal_adj_v_frw + temporal_adj_v_back
         temporal_adj_e_back, temporal_adj_e_frw = self.get_temporal_edge_adjacency()
         temporal_adj_e = temporal_adj_e_back + temporal_adj_e_frw
-        AV_full, AV_root, AV_close, AV_further = self.get_spatial_adjacency()
+        AV_full, AV_root, AV_close, AV_further, AV_sym = self.get_spatial_adjacency()
         AE_full, AE_root, AE_parent, AE_child, AE_crosshead = self.get_edge_adjacency()
 
         if self.norm:
@@ -296,6 +299,7 @@ class Graph:
             AV_further[AV_further == 1] = normed_adj_v[AV_further == 1]
             AV_root[AV_root == 1] = normed_adj_v[AV_root == 1]
             AV_full[AV_full == 1] = normed_adj_v[AV_full == 1]
+            AV_sym[AV_sym == 1] = normed_adj_v[AV_sym == 1]
             temporal_adj_v[temporal_adj_v == 1] = normed_adj_v[temporal_adj_v == 1]
             temporal_adj_v_frw[temporal_adj_v_frw == 1] = normed_adj_v[temporal_adj_v_frw == 1]
             temporal_adj_v_back[temporal_adj_v_back == 1] = normed_adj_v[temporal_adj_v_back == 1]
@@ -321,6 +325,7 @@ class Graph:
             "adj_v_temp": temporal_adj_v,
             "adj_v_close": AV_close,
             "adj_v_further": AV_further,
+            "adj_v_sym": AV_sym,
             "adj_e": AE_full,
             "adj_e_root": AE_root,
             "adj_e_temp": temporal_adj_e,
@@ -336,7 +341,7 @@ class Graph:
 
 
 if __name__ == "__main__":
-    adjs = Graph(num_joints=17, num_edges=16, num_frames=1, norm=True)()
-    grp = torch.stack((adjs['adj_v_further'], adjs['adj_v']))
-    plot_adjacency_matrix(grp[0], annotate_frames=False, annotate_values=True, node_names=get_node_names(1))
+    adjs = Graph(num_joints=17, num_edges=16, num_frames=3, norm=True)()
+    grp = torch.stack((adjs['adj_v'], adjs['adj_v']))
+    plot_adjacency_matrix(grp[0], annotate_frames=False, annotate_values=True, node_names=get_node_names(3))
     # plot_node_to_edge_map(ajds["adj_v_close"], num_frames=3, annotate_frames=False, node_names=get_node_names(3), edge_names=get_edge_names(3))

@@ -361,11 +361,12 @@ class STGConv(nn.Module):
                  residual=False,
                  use_non_parametric=False,
                  use_edge_conv=True,
-                 aggregate=True,):
+                 aggregate=True,
+                 learn_adj=True):
         super(STGConv, self).__init__()
 
-        self.adj_v = nn.ParameterList([nn.Parameter(adj_v.clone().detach()) for i in range(num_stages)])
-        self.adj_e = nn.ParameterList([nn.Parameter(adj_e.clone().detach()) for i in range(num_stages)])
+        self.adj_v = nn.Parameter(adj_v.clone().detach(), requires_grad=learn_adj)
+        self.adj_e = nn.Parameter(adj_e.clone().detach(), requires_grad=learn_adj)
         self.T = T
 
         self.frame_length = gcn_window
@@ -424,7 +425,7 @@ class STGConv(nn.Module):
         if self.use_edge_conv:
             for s in range(len(self.graph_stages)):
                 X, Z = X.reshape(-1, self.seq_len, self.n_nodes_in_seq, self.nhid_v), Z.reshape(-1, self.seq_len, self.n_edges_in_seq, self.nhid_v)
-                X, Z = self.graph_stages[s](X, Z, self.adj_e[s], self.adj_v[s], self.T)
+                X, Z = self.graph_stages[s](X, Z, self.adj_e, self.adj_v, self.T)
 
             if self.aggregate:
                 X, Z = X.reshape(-1, self.n_in_frames, 17, self.nhid_v).transpose(1, -1), Z.reshape(-1, self.n_in_frames, 16, self.nhid_e).transpose(1, -1)
@@ -435,12 +436,12 @@ class STGConv(nn.Module):
             return X, Z
         else:
             X = X.reshape(-1, self.seq_len, self.n_nodes_in_seq, self.nin_v)
-            X = self.graph_stages[0](X, self.adj_v[0])
+            X = self.graph_stages[0](X, self.adj_v)
             X = X.reshape(-1, self.n_in_frames, 17, self.nhid_v)
 
             for s in range(len(self.graph_stages) - 1):
                 X = X.reshape(-1, self.seq_len, self.n_nodes_in_seq, self.nhid_v)
-                X = self.graph_stages[s + 1](X, self.adj_v[s])
+                X = self.graph_stages[s + 1](X, self.adj_v)
                 X = X.reshape(-1, self.n_in_frames, 17, self.nhid_v)
 
             if self.aggregate:

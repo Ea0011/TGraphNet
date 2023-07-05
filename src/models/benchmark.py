@@ -83,16 +83,17 @@ if __name__ == "__main__":
                     nhid_e=[[256, 256], [256, 256], [256, 256], [256, 256]],
                     n_oute=6,
                     n_outv=3,
-                    gcn_window=[1, 1, 1, 1,],
+                    gcn_window=[3, 3, 3, 3,],
                     tcn_window=[3, 3, 3, 3,],
                     num_groups=3,
                     aggregate=[True, True, True, True,],
                     in_frames=81,
                     gconv_stages=[1, 1, 1, 1],
-                    dropout=0.25,
+                    dropout=0.1,
                     use_residual_connections=True,
                     use_non_parametric=False,
-                    use_edge_conv=False,).to(device)
+                    use_edge_conv=False,
+                    learn_adj=False).to(device)
 
     print(gcn)
 

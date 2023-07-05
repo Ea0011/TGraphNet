@@ -509,7 +509,8 @@ def main():
                       dropout=params.dropout,
                       use_residual_connections=params.use_residual_connections,
                       use_non_parametric=params.use_non_parametric,
-                      use_edge_conv=params.use_edge_conv,).to(device)
+                      use_edge_conv=params.use_edge_conv,
+                      learn_adj=params.learn_adj,).to(device)
 
     logging.info("Num of parameters: " + str(count_parameters(model)))
     print_layers(model)

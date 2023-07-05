@@ -44,15 +44,16 @@ class TGraphNet(nn.Module):
                  dropout,
                  use_residual_connections,
                  use_non_parametric,
-                 use_edge_conv,):
+                 use_edge_conv,
+                 learn_adj,):
         super(TGraphNet, self).__init__()
 
         g = Graph(17, 16, gcn_window[0], norm=True)()
         adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'],)), g['adj_e_wtemp'], g['ne_mapping']
         # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
-        self.adj_v = nn.Parameter(adj_v.to(device))
-        self.adj_e = nn.Parameter(adj_e.to(device))
+        self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=False)
+        self.adj_e = nn.Parameter(adj_e.to(device), requires_grad=False)
         self.T = T.to(device)
         self.gcn_window = gcn_window
         self.tcn_window = tcn_window
@@ -60,13 +61,14 @@ class TGraphNet(nn.Module):
         self.infeat_v = infeat_v
         self.infeat_e = infeat_e
         self.use_edge_conv = use_edge_conv
+        self.learn_adj = learn_adj
 
         self.seq_len = in_frames // gcn_window[0]
         self.n_nodes = 17 * gcn_window[0]
         self.n_edges = 16 * gcn_window[0]
         self.num_groups = num_groups
 
-        self.pre = GCNodeEdgeModule(in_frames, infeat_v, infeat_e, nhid_v[0][0], nhid_e[0][0], dropout=0) if use_edge_conv else GCN(in_frames, infeat_v, nhid_v[0][0], num_groups=num_groups, dropout=0)
+        self.pre = GCNodeEdgeModule(in_frames, infeat_v, infeat_e, nhid_v[0][0], nhid_e[0][0], dropout=0) if use_edge_conv else GCN(in_frames, infeat_v, nhid_v[0][0], num_groups=num_groups, dropout=dropout)
         self.layers = nn.ModuleList()
 
         n_stages = len(nhid_v)
@@ -93,10 +95,11 @@ class TGraphNet(nn.Module):
                     residual=use_residual_connections,
                     use_non_parametric=use_non_parametric,
                     use_edge_conv=use_edge_conv,
-                    aggregate=aggregate[i]),
+                    aggregate=aggregate[i],
+                    learn_adj=self.learn_adj),
                 )
 
-        self.post_node = nn. Sequential(
+        self.post_node = nn.Sequential(
             SENet(dim=nhid_v[-1][-1]),
             nn.Linear(nhid_v[-1][-1], n_outv)
         )
@@ -291,7 +294,8 @@ if __name__ == "__main__":
                     dropout=0.25,
                     use_residual_connections=True,
                     use_non_parametric=False,
-                    use_edge_conv=False,)
+                    use_edge_conv=False,
+                    learn_adj=False,)
 
     for m in gcn.layers:
         print(m.string())
