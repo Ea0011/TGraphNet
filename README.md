@@ -13,7 +13,7 @@ This repo contains the implementation of TGraphNet, a spatio-temporal graph conv
 ## TGraphNet
 
 <div align="center">
-  <img src="https://github.com/Ea0011/TGraphNet/blob/main/reports/diagrams/architecture.png" height="90%" width="90%" />
+  <img src="https://github.com/Ea0011/TGraphNet/blob/main/reports/diagrams/arhictecture.png" height="90%" width="90%" />
 </div>
 
 TGraphNet is a U-Shaped spatial-temporal graph convolutional network that estimates 3D pose sequence from an input video. It is a 2-stage model, meaning that first a sequence of 2D postures are created from the video, then 2D poses are lifted to 3D poses by TGraphNet.  
