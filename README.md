@@ -40,7 +40,7 @@ The model checkpoint is located in `./models/stgcn/root_rel/root_rel.pth.tar` fo
 
 ```python
 cd src
-python3 models/train_seq.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="testing" --data_dir="/media/HDD3/datasets/Human3.6M/pose_zip" --seed_value=333 --mode=test
+python3 models/train_seq.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="testing" --data_dir="/path/to/h36m/dataset" --seed_value=333 --mode=test
 ```
 
 For evaluation on MPI-3DPW dataset run:
@@ -63,7 +63,7 @@ The model checkpoint is located in `./models/stgcn/root_rel/root_rel.pth.tar` fo
 
 ```python
 cd src
-python3 models/train_seq_traj.py --exp_suffix=global_pos --run_suffix=1 --exp_desc="testing" --data_dir="/media/HDD3/datasets/Human3.6M/pose_zip" --seed_value=333 --mode=test
+python3 models/train_seq_traj.py --exp_suffix=global_pos --run_suffix=1 --exp_desc="testing" --data_dir="/path/to/h36m/dataset" --seed_value=333 --mode=test
 ```
 
 For evaluation on MPI-3DPW dataset run:
@@ -86,14 +86,14 @@ To train the root relative 3D pose mode, TGraphNet, remove the checkpoint path i
 
 ```python
 cd src
-python3 models/train_seq.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="description" --data_dir="/media/HDD3/datasets/Human3.6M/pose_zip" --seed_value=333 --mode=train
+python3 models/train_seq.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="description" --data_dir="/path/to/h36m/dataset" --seed_value=333 --mode=train
 ```
 
 To train TGraphNet traj, remove the checkpoint path in `params.json` and run:
 
 ```python
 cd src
-python3 models/train_seq_traj.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="description" --data_dir="/media/HDD3/datasets/Human3.6M/pose_zip" --seed_value=333 --mode=train
+python3 models/train_seq_traj.py --exp_suffix=root_rel --run_suffix=1 --exp_desc="description" --data_dir="/path/to/h36m/dataset" --seed_value=333 --mode=train
 ```
 
 ## Acknowledgements
