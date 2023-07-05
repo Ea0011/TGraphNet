@@ -390,6 +390,7 @@ class Human36M:
         print("2d: ", len(self.pos2d), "3d: ", len(self.pos3d_centered), \
              "angles_6d: ", len(self.gt_angles_6d), "edge_feat:", len(self.edge_features), \
              "global_ori: ", len(self.global_ori))
+        print(sum([len(s) for s in self.pos2d]))
 
 
 
@@ -398,7 +399,9 @@ if __name__ == "__main__":
     from time import strftime, gmtime
 
     start = time.time()
-    ds = Human36M(data_dir="../../Human3.6m", train=True, ds_category="cpn", actions="all")
+    ds = Human36M(data_dir="../../Human3.6m", train=False, ds_category="gt", actions="all")
+
+    print(ds.image_names)
 
     print(ds.pos2d[0].shape)
 

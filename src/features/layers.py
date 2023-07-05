@@ -5,14 +5,17 @@ import math
 
 
 class GCN(nn.Module):
-    def __init__(self, in_features, out_features, dropout=0):
+    def __init__(self, in_frames, in_features, out_features, dropout=0):
         super(GCN, self).__init__()
 
         self.in_features = in_features
         self.out_features = out_features
+        self.in_frames = in_frames
+        self.dropout = dropout
 
         self.weight = nn.Parameter(torch.FloatTensor(in_features, out_features))
         self.bias = nn.Parameter(torch.FloatTensor(out_features))
+        self.bn = nn.BatchNorm1d(out_features)
 
         # Store the adjacency matrix as an attribute of the model
 
@@ -27,18 +30,24 @@ class GCN(nn.Module):
         output = adj @ support
 
         if self.bias is not None:
-            return output + self.bias
-        else:
-            return output
+            output = output + self.bias
+
+        output = self.bn(output.transpose(1, 2)).transpose(1, 2)
+        output = F.relu(output)
+        output = F.dropout(output, self.dropout, training=self.training)
+
+        return output
 
 
 class TCN(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(1, 7), stride=(1, 1), use_non_parametric=False):
+    def __init__(self, in_channels, out_channels, kernel_size=(1, 7), stride=(1, 1), use_non_parametric=False, dropout=.0):
         super(TCN, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
+        self.dropout = dropout
+        self.bn = nn.BatchNorm2d(out_channels)
 
         if use_non_parametric:
             self.conv = nn.AvgPool2d(kernel_size=kernel_size, stride=stride)
@@ -53,7 +62,7 @@ class TCN(nn.Module):
         self.conv.weight.data.normal_(0, 0.01)
 
     def forward(self, x):
-        out = self.sigma(self.conv(x))
+        out = F.dropout(self.sigma(self.bn(self.conv(x))), self.dropout, self.training)
         return out
 
 
@@ -61,10 +70,10 @@ class NodeResidualBlock(nn.Module):
     """
     Residual block with two node-edge modules
     """
-    def __init__(self, nfeat_v, nhid_v, dropout):
+    def __init__(self, in_frames, nfeat_v, nhid_v, dropout):
         super(NodeResidualBlock, self).__init__()
-        self.gc1 = GCN(nfeat_v, nhid_v,)
-        self.gc2 = GCN(nfeat_v, nhid_v,)
+        self.gc1 = GCN(in_frames, nfeat_v, nhid_v, dropout)
+        self.gc2 = GCN(in_frames, nfeat_v, nhid_v, dropout)
 
     def forward(self, X, adj_v):
         residual_X = X
@@ -78,12 +87,15 @@ class NodeResidualBlock(nn.Module):
 
 
 class NodeEdgeTCN(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(1, 7), stride=(1, 1), use_non_parametric=True):
+    def __init__(self, in_channels, out_channels, kernel_size=(1, 7), stride=(1, 1), use_non_parametric=True, dropout=.0):
         super(NodeEdgeTCN, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
+        self.dropout = dropout
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.bn2 = nn.BatchNorm2d(out_channels)
 
         if use_non_parametric:
             self.conv_node = nn.AvgPool2d(kernel_size=kernel_size, stride=stride)
@@ -100,8 +112,8 @@ class NodeEdgeTCN(nn.Module):
         self.conv_edge.weight.data.normal_(0, 0.01)
 
     def forward(self, x, z):
-        out_node = self.sigma(self.conv_node(x))
-        out_edge = self.sigma(self.conv_edge(z))
+        out_node = F.dropout(self.sigma(self.bn1(self.conv_node(x))), self.dropout, self.training)
+        out_edge = F.dropout(self.sigma(self.bn2(self.conv_node(z))), self.dropout, self.training)
         return out_node, out_edge
 
 
@@ -194,7 +206,7 @@ class NodeEdgeConv(nn.Module):
 
 
 class GCNodeEdgeModule(nn.Module):
-    def __init__(self, nfeat_v, nfeat_e, nhid_v, nhid_e, dropout, use_bn=True, use_activ=True):
+    def __init__(self, in_frames, nfeat_v, nfeat_e, nhid_v, nhid_e, dropout, use_bn=True, use_activ=True):
         super(GCNodeEdgeModule, self).__init__()
 
         # node
@@ -205,6 +217,9 @@ class GCNodeEdgeModule(nn.Module):
 
         self.use_bn = use_bn
         self.use_activ = use_activ
+        self.in_frames = in_frames
+        self.nhid_v = nhid_v
+        self.nhid_e = nhid_e
 
         if self.use_bn:
             self.bn1 = nn.BatchNorm1d(nhid_v)
@@ -240,11 +255,11 @@ class GCResidualBlock(nn.Module):
     """
     Residual block with two node-edge modules
     """
-    def __init__(self, nfeat_v, nfeat_e, nhid_v, nhid_e, dropout):
+    def __init__(self, in_frames, nfeat_v, nfeat_e, nhid_v, nhid_e, dropout):
         super(GCResidualBlock, self).__init__()
 
-        self.gc1 = GCNodeEdgeModule(nfeat_v, nfeat_e, nhid_v, nhid_e, dropout)
-        self.gc2 = GCNodeEdgeModule(nhid_v, nhid_e, nhid_v, nhid_e, dropout)
+        self.gc1 = GCNodeEdgeModule(in_frames, nfeat_v, nfeat_e, nhid_v, nhid_e, dropout)
+        self.gc2 = GCNodeEdgeModule(in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout)
         self.residual_flag = "same"
 
         if (nfeat_v != nhid_v or nfeat_e != nhid_e):
@@ -293,8 +308,8 @@ class STGConv(nn.Module):
                  use_edge_conv=True):
         super(STGConv, self).__init__()
 
-        self.adj_v = nn.Parameter(adj_v)
-        self.adj_e = nn.Parameter(adj_e)
+        self.adj_v = nn.ParameterList([nn.Parameter(adj_v.clone().detach()) for i in range(num_stages)])
+        self.adj_e = nn.ParameterList([nn.Parameter(adj_e.clone().detach()) for i in range(num_stages)])
         self.T = T
 
         self.frame_length = gcn_window
@@ -306,11 +321,11 @@ class STGConv(nn.Module):
         for s in range(num_stages):
             if residual:
                 self.graph_stages.append(
-                    GCResidualBlock(nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(nhid_v, nhid_v, dropout)
+                    GCResidualBlock(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else NodeResidualBlock(n_in_frames, nhid_v, nhid_v, dropout)
                 )
             else:
                 self.graph_stages.append(
-                    GCNodeEdgeModule(nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else GCN(nhid_v, nhid_v, dropout)
+                    GCNodeEdgeModule(n_in_frames, nhid_v, nhid_e, nhid_v, nhid_e, dropout) if use_edge_conv else GCN(n_in_frames, nhid_v, nhid_v, dropout)
                 )
 
         # Add a non parametric option here
@@ -319,18 +334,20 @@ class STGConv(nn.Module):
                                    nhid_v,
                                    kernel_size=(1, self.tcn_window),
                                    stride=(1, self.tcn_window),
-                                   use_non_parametric=use_non_parametric,)
+                                   use_non_parametric=use_non_parametric,
+                                   dropout=dropout)
         else:
             self.tcn = TCN(nhid_v,
                            nhid_v,
                            kernel_size=(1, self.tcn_window),
                            stride=(1, self.tcn_window),
-                           use_non_parametric=use_non_parametric,)
+                           use_non_parametric=use_non_parametric,
+                           dropout=dropout)
 
     def forward(self, X, Z=None):
         if self.use_edge_conv:
             for s in range(len(self.graph_stages)):
-                X, Z = self.graph_stages[s](X, Z, self.adj_e, self.adj_v, self.T)
+                X, Z = self.graph_stages[s](X, Z, self.adj_e[s], self.adj_v[s], self.T)
 
             hdim_v = X.shape[-1]
             hdim_e = Z.shape[-1]
@@ -342,7 +359,7 @@ class STGConv(nn.Module):
             return X.view(-1, n_frames, 17, hdim_v), Z.view(-1, n_frames, 16, hdim_e)
         else:
             for s in range(len(self.graph_stages)):
-                X = self.graph_stages[s](X, self.adj_v,)
+                X = self.graph_stages[s](X, self.adj_v[s],)
 
             hdim_v = X.shape[-1]
 

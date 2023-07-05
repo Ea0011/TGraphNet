@@ -19,7 +19,7 @@ from common.utils import Params, set_logger, copy_weight, load_checkpoint, save_
 from common.model import print_layers, weight_init, count_parameters
 from data.h36m_dataset import Human36M
 from common.h36m_skeleton import joint_id_to_names
-from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, eval_data_prepare
+from data.generators import ChunkedGenerator_Seq, UnchunkedGenerator_Seq, ChunkedGenerator_Frame, eval_data_prepare
 import loss
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -61,18 +61,17 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
     num_batches = train_gen.num_batches
 
     for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in train_gen.next_epoch():
-        print(cameras_train, batch_3d.shape, batch_6d.shape, batch_edge.shape, batch_2d.shape)
         input_2d = torch.FloatTensor(batch_2d).to(device)
         input_edge = torch.FloatTensor(batch_edge).to(device)
-        out_3d = torch.FloatTensor(batch_3d).to(device)
-        out_6d = torch.FloatTensor(batch_6d).to(device)
+        target_pose_3d = torch.FloatTensor(batch_3d).to(device).reshape(-1, 17, 3)
+        target_angle_6d = torch.FloatTensor(batch_6d).to(device).reshape(-1, 16, 6)
 
         predicted_pos3d, predicted_angle_6d = model(input_2d, input_edge)
 
-        middle_index = int((params.in_frames - 1) / 2)
+        # middle_index = int((params.in_frames - 1) / 2)
 
-        target_angle_6d = out_6d[:, middle_index].view_as(predicted_angle_6d)
-        target_pose_3d = out_3d[:, middle_index].view_as(predicted_pos3d)
+        # target_angle_6d = out_6d[:, middle_index].view_as(predicted_angle_6d)
+        # target_pose_3d = out_3d[:, middle_index].view_as(predicted_pos3d)
 
         batch_size = input_2d.shape[0]
         hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
@@ -91,8 +90,6 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         optimizer.zero_grad()
         loss_train.backward()
         optimizer.step()
-
-        print("FORWARD BACKWARD COMPLETE")
 
         n_batches += 1
 
@@ -118,8 +115,6 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
             }
 
         summary.append(summary_batch)
-
-        print(summary_batch)
 
         if n_batches % params.save_summary_steps == 0:
 
@@ -193,21 +188,25 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
         for cameras_train, batch_3d, batch_6d, batch_2d, batch_edge in val_gen.next_epoch():
             input_2d = torch.FloatTensor(batch_2d).to(device)
             input_edge = torch.FloatTensor(batch_edge).to(device)
-            out_3d = torch.FloatTensor(batch_3d).to(device)
-            out_6d = torch.FloatTensor(batch_6d).to(device)
+            target_pose_3d = torch.FloatTensor(batch_3d).to(device).reshape(-1, 17, 3)
+            target_angle_6d = torch.FloatTensor(batch_6d).to(device).reshape(-1, 16, 6)
 
-            out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, out_3d, out_6d)
-            print(cameras_train, out_3d.shape, out_6d.shape, input_edge.shape, input_2d.shape)
+            # out_3d, out_6d, input_edge, input_2d = eval_data_prepare(params.in_frames, input_2d, input_edge, out_3d, out_6d)
+            # out_3d = out_3d.to(device)
+            # out_6d = out_6d.to(device)
+            # input_edge = input_edge.to(device)
+            # input_2d = input_2d.to(device)
 
             predicted_pos3d, predicted_angle_6d = model(input_2d, input_edge)
 
-            middle_index = int((params.in_frames - 1) / 2)
+            # middle_index = int((params.in_frames - 1) / 2)
 
-            target_angle_6d = out_6d[:, middle_index].view_as(predicted_angle_6d)
-            target_pose_3d = out_3d[:, middle_index].view_as(predicted_pos3d)
+            # target_angle_6d = out_6d[:, middle_index].view_as(predicted_angle_6d)
+            # target_pose_3d = out_3d[:, middle_index].view_as(predicted_pos3d)
 
             batch_size = input_2d.shape[0]
             hip_ori = torch.tensor([[[1., 0., 0., 1., 0., 0.]]]).repeat(batch_size, 1, 1).to(device)
+
             predicted_angle_6d = torch.cat((hip_ori, predicted_angle_6d), dim=1)
             batch_angles_6d = torch.cat((hip_ori, target_angle_6d), dim=1)
 
@@ -219,10 +218,10 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
 
             loss_val = loss_pos + params.lambda_angle * loss_angle
 
-            err_pos = metrics[0](
+            err_pos, err_pos_joint = metrics[0](
                 predicted_pos3d.cpu().data,
                 target_pose_3d.cpu().data
-            )[0]
+            )
 
             err_geodesic = metrics[1](
                 predicted_angle_mat.cpu().data.numpy(),
@@ -232,12 +231,12 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
             mean_geodesic_error_without_hip = np.mean(err_geodesic[1:])
 
             summary_batch = {
-                'train_loss': loss_val.item(),
-                'train_loss_pos': loss_pos.item(),
-                'train_loss_angle': loss_angle.item(),
-                'train_err_pos': err_pos.item(),
-                'train_err_geodesic': mean_geodesic_distance.item(),
-                'train_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item()
+                'val_loss': loss_val.item(),
+                'val_err_pos': err_pos.item(),
+                'val_err_pos_joint': err_pos_joint.cpu().data.numpy(),
+                'val_err_geodesic': mean_geodesic_distance.item(),
+                'val_err_geodesic_wo_hip': mean_geodesic_error_without_hip.item(),
+                'per_joint_geod_err': err_geodesic
             }
             summary.append(summary_batch)
 
@@ -308,6 +307,52 @@ def evaluate(model, loss_fn, val_gen, metrics, params, epoch, writer, log_dict, 
     return {'val_err': metrics_err_pos_mean, 'val_geod_err': metrics_geod_err_with_hip_mean}
 
 
+def validate_and_save(model, loss_fn, val_generator, metrics, params, epoch, writer, log_dict, exp, detailed=False, viz=False, joint_dict=None):
+    t1 = time.time()
+    val_metrics = evaluate(model, loss_fn, val_generator, metrics, params, epoch, writer, log_dict, exp, detailed=False, viz=viz, joint_dict=joint_dict)
+    logging.info("Epoch {} validation time: {}".format(epoch, strftime("%H:%M:%S", gmtime(time.time() - t1))))
+    val_err = val_metrics['val_err']
+    val_geod_err = val_metrics['val_geod_err']
+
+    if epoch > params.start_epoch:
+        is_best = (val_err <= best_val_err) and (val_geod_err <= best_val_geod_err)
+        is_best_pos = val_err <= best_val_err
+        is_best_ori = val_geod_err <= best_val_geod_err
+    elif epoch == 0:
+        best_val_err = val_err
+        best_val_geod_err = val_geod_err
+
+    # If best_eval, best_save_path
+    if is_best:
+        logging.info("- Found new min validation error")
+        best_val_err = val_err
+        best_val_geod_err = val_geod_err
+        log_dict['best_val_err'] = {"epoch": epoch, "err": best_val_err, "geod_err": best_val_geod_err}
+
+    if is_best_pos:
+        best_val_err = val_err
+        log_dict['best_val_err_pos'] = {"epoch": epoch, "err": best_val_err}
+        logging.info("- Found new min validation pos error")
+
+    if is_best_ori:
+        best_val_geod_err = val_geod_err
+        log_dict['best_val_err_ori'] = {"epoch": epoch, "geod_err": best_val_geod_err}
+        logging.info("- Found new min validation ori error")
+
+    # # Save weights
+    save_checkpoint_pos_ori({'epoch': epoch,
+                             'state_dict': model.state_dict(),
+                             'optim_dict': optimizer.state_dict(),
+                             'lr_dict': scheduler.state_dict(),
+                             'last_best_err': best_val_err,
+                             'last_best_geod_err': best_val_geod_err,
+                             },
+                            is_best=is_best,
+                            is_best_pos=is_best_pos,
+                            is_best_ori=is_best_ori,
+                            checkpoint=model_dir)
+
+
 def train_and_evaluate(model, train_generator, val_generator, optimizer, scheduler, loss_fn, metrics, params,
                        model_dir, tf_logdir, log_dict, exp, viz, restore_file=None, joint_dict=None):
     """
@@ -354,7 +399,9 @@ def train_and_evaluate(model, train_generator, val_generator, optimizer, schedul
         logging.info("Epoch {} training time: {}".format(epoch, strftime("%H:%M:%S", gmtime(time.time() - t0))))
         lr_now = get_lr(optimizer)
         logging.info("Epoch {} learning_rate: {:.10f}".format(epoch, lr_now))
-        log_dict['hyperparameters']['lr'].append(round(lr_now, 10))
+
+        # update lr
+        scheduler.step()
 
         is_best = False
         is_best_pos = False
@@ -367,9 +414,6 @@ def train_and_evaluate(model, train_generator, val_generator, optimizer, schedul
             logging.info("Epoch {} validation time: {}".format(epoch, strftime("%H:%M:%S", gmtime(time.time() - t1))))
             val_err = val_metrics['val_err']
             val_geod_err = val_metrics['val_geod_err']
-
-            # update lr
-            scheduler.step()
 
             if epoch > params.start_epoch:
                 is_best = (val_err <= best_val_err) and (val_geod_err <= best_val_geod_err)
@@ -471,8 +515,10 @@ def main():
         train_dataset = Human36M(data_dir=args.data_dir, train=True, ds_category=params.ds_category)
         pos2d, pos3d, angles_6d, edge_features = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features
 
-        train_generator = ChunkedGenerator_Seq(params.batch_size//params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                               edge_feat=edge_features, chunk_length=params.in_frames, pad=0, shuffle=True,)
+        # train_generator = ChunkedGenerator_Seq(params.batch_size//params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+        #                                        edge_feat=edge_features, chunk_length=params.in_frames, pad=0, shuffle=True,)
+        train_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+                                                 edge_feat=edge_features, chunk_length=1, pad=((params.in_frames - 1) // 2), shuffle=True,)
 
         logging.info(f"N Frames: {train_generator.num_frames()}, N Batches {train_generator.num_batches}")
         logging.info("- done.")
@@ -480,7 +526,9 @@ def main():
     logging.info("Loading test dataset....")
     test_dataset = Human36M(data_dir=args.data_dir, train=False, ds_category=params.ds_category)
     pos2d, pos3d, angles_6d, edge_features = test_dataset.pos2d, test_dataset.pos3d_centered, test_dataset.gt_angles_6d, test_dataset.edge_features
-    val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features)
+    # val_generator = UnchunkedGenerator_Seq(cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d, edge_feat=edge_features)
+    val_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
+                                           edge_feat=edge_features, chunk_length=1, pad=((params.in_frames - 1) // 2), shuffle=False,)
 
     logging.info("Number of validation frames: {}".format(val_generator.num_frames()))
     logging.info("- done.")
@@ -503,6 +551,7 @@ def main():
 
     logging.info("Num of parameters: " + str(count_parameters(model)))
     print_layers(model)
+    print(model)
     logging.info("- done.")
 
     if params.init_weights:

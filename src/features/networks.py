@@ -56,7 +56,7 @@ class TGraphNet(nn.Module):
         self.infeat_e = infeat_e
         self.use_edge_conv = use_edge_conv
 
-        self.pre = GCNodeEdgeModule(infeat_v, infeat_e, nhid_v[0], nhid_e[0], dropout=0) if use_edge_conv else GCN(infeat_v, nhid_v[0], dropout=0)
+        self.pre = GCNodeEdgeModule(in_frames, infeat_v, infeat_e, nhid_v[0], nhid_e[0], dropout=0) if use_edge_conv else GCN(in_frames, infeat_v, nhid_v[0], dropout=0)
         self.layers = nn.ModuleList()
 
         n_stages = len(nhid_v)
@@ -93,6 +93,14 @@ class TGraphNet(nn.Module):
                 nn.Dropout(dropout),
                 nn.Linear(nhid_e[-1],  n_oute * 16)
             )
+        else:
+            self.senet_edge = SENet(dim=nhid_v[-1])
+            self.post_edge = nn.Sequential(
+                nn.Linear(n_outv * 17 + 17 * nhid_v[-1], nhid_v[-1]),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(nhid_v[-1], n_oute * 16)
+            )
 
     def forward(self, X, Z=None):
         if self.use_edge_conv:
@@ -125,10 +133,15 @@ class TGraphNet(nn.Module):
                 X, _ = self.layers[s](X)
                 X = X.view(-1, (self.gcn_window[s+1] * 17), X.shape[-1])
 
-            X, _ = self.layers[-1](X)
-            X = self.post_node(X)
+            features, _ = self.layers[-1](X)
+            X = self.post_node(features)
 
-            return X
+            Z = self.senet_edge(features)
+            batch_size = Z.shape[0]
+            feat = torch.cat((X.view(batch_size, -1), Z.reshape(batch_size, -1)), axis=1)
+            Z = self.post_edge(feat).view(batch_size, 16, -1)
+
+            return X.view(batch_size, 17, -1), Z
 
 
 if __name__ == "__main__":

@@ -83,9 +83,9 @@ if __name__ == "__main__":
                     nhid_e=[256, 256, 256, 256],
                     n_oute=6,
                     n_outv=3,
-                    gcn_window=[9, 9, 9, 9],
-                    tcn_window=[3, 3, 3, 9],
-                    in_frames=243,
+                    gcn_window=[3, 3, 3, 3],
+                    tcn_window=[3, 3, 3, 3],
+                    in_frames=81,
                     gconv_stages=[1, 2, 2, 3],
                     dropout=0.25,
                     use_residual_connections=True,
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     if args.mode == "both":
         opt = optim.AdamW(gcn.parameters(), lr=0.001)
         t0 = benchmark.Timer(
-            stmt="forward_backward_bench(gcn, opt, {}, 243, {})".format(str(args.batch_size), str(args.n_batches)),
+            stmt="forward_backward_bench(gcn, opt, {}, 81, {})".format(str(args.batch_size), str(args.n_batches)),
             label="forward and backward pass benchmark on {} device".format(str(device)),
             globals={
                 'forward_backward_bench': forward_backward_bench,
@@ -111,7 +111,7 @@ if __name__ == "__main__":
         print(t0.timeit(args.n_measurements))
     else:
         t1 = benchmark.Timer(
-            stmt="forward_bench(gcn, {}, 243)".format(str(args.batch_size)),
+            stmt="forward_bench(gcn, {}, 81)".format(str(args.batch_size)),
             label="forward pass benchmark on {} device".format(str(device)),
             num_threads=torch.get_num_threads(),
             globals={
