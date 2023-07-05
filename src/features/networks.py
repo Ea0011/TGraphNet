@@ -52,8 +52,8 @@ class TGraphNet(nn.Module):
         adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
         # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
-        self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=False)
-        self.adj_e = nn.Parameter(adj_e.to(device), requires_grad=False)
+        self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=True)
+        self.adj_e = nn.Parameter(adj_e.to(device), requires_grad=True)
         self.T = T.to(device)
         self.gcn_window = gcn_window
         self.tcn_window = tcn_window
@@ -69,6 +69,7 @@ class TGraphNet(nn.Module):
         self.num_groups = num_groups
 
         self.pre = GCNodeEdgeModule(in_frames, infeat_v, infeat_e, nhid_v[0][0], nhid_e[0][0], dropout=0) if use_edge_conv else GCN(in_frames, infeat_v, nhid_v[0][0], num_groups=num_groups, dropout=dropout)
+        # self.pre = nn.Linear(infeat_v, nhid_v[0][0])
         self.layers = nn.ModuleList()
 
         n_stages = len(nhid_v)
@@ -172,8 +173,8 @@ class TGraphNetSeq(nn.Module):
         adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
         # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
 
-        self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=False)
-        self.adj_e = nn.Parameter(adj_e.to(device), requires_grad=False)
+        self.adj_v = nn.Parameter(adj_v.to(device), requires_grad=True)
+        self.adj_e = nn.Parameter(adj_e.to(device), requires_grad=True)
         self.T = T.to(device)
         self.gcn_window = gcn_window
         self.tcn_window = tcn_window
@@ -203,8 +204,8 @@ class TGraphNetSeq(nn.Module):
                     nin_e=nhid_e[i][0],
                     nhid_v=nhid_v[i][1],
                     nhid_e=nhid_e[i][1],
-                    adj_e=adj_e.to(device),
-                    adj_v=adj_v.to(device),
+                    adj_e=self.adj_e.to(device),
+                    adj_v=self.adj_v.to(device),
                     T=T.to(device),
                     n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[i]),
                     gcn_window=self.gcn_window[i],
@@ -230,8 +231,8 @@ class TGraphNetSeq(nn.Module):
                         nin_e=nhid_e[-(i+1)][1],
                         nhid_v=nhid_v[-(i+1)][0],
                         nhid_e=nhid_e[-(i+1)][0],
-                        adj_e=adj_e.to(device),
-                        adj_v=adj_v.to(device),
+                        adj_e=self.adj_e.to(device),
+                        adj_v=self.adj_v.to(device),
                         T=T.to(device),
                         n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[-(i + 2)]),
                         gcn_window=self.gcn_window[i],
@@ -260,8 +261,8 @@ class TGraphNetSeq(nn.Module):
                         nin_e=nhid_e[-(i+2)][1],
                         nhid_v=nhid_v[0][1],
                         nhid_e=nhid_e[0][1],
-                        adj_e=adj_e.to(device),
-                        adj_v=adj_v.to(device),
+                        adj_e=self.adj_e.to(device),
+                        adj_v=self.adj_v.to(device),
                         T=T.to(device),
                         n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[-(i + 2)]),
                         gcn_window=self.gcn_window[i],
@@ -284,8 +285,8 @@ class TGraphNetSeq(nn.Module):
             nin_e=nhid_e[0][1],
             nhid_v=nhid_v[0][1],
             nhid_e=nhid_e[0][1],
-            adj_e=adj_e.to(device),
-            adj_v=adj_v.to(device),
+            adj_e=self.adj_e.to(device),
+            adj_v=self.adj_v.to(device),
             T=T.to(device),
             n_in_frames=(self.in_frames),
             gcn_window=self.gcn_window[0],

@@ -2,6 +2,101 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import math
+from einops import rearrange
+
+
+class Mlp(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.ReLU, dropout=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(dropout)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+
+
+class SeqAffinityModulation(nn.Module):
+    def __init__(self, in_features, num_joints, num_groups=1, mlp_ratio=1):
+        super().__init__()
+        self.num_groups = num_groups
+        self.num_joints = num_joints
+        self.mlp = Mlp(in_features=in_features, hidden_features=in_features*mlp_ratio, out_features=num_joints*num_joints*num_groups)
+
+
+    def forward(self, input_features, adj):
+        x = torch.mean(input_features, dim=(1, 2)) if len(input_features.shape) > 3 else input_features # average over sequence dimension
+        modulation = self.mlp(x)
+        modulation = rearrange(modulation, 'b (j1 j2 g) -> b g j1 j2', g=self.num_groups, j1=self.num_joints, j2=self.num_joints)
+        affinity = modulation + adj
+
+        return affinity
+
+
+class FrameAffinityModulation(nn.Module):
+    def __init__(self, in_features, num_joints, num_groups=1, mlp_ratio=1):
+        super().__init__()
+        self.num_groups = num_groups
+        self.num_joints = num_joints
+        self.mlp = Mlp(in_features=in_features, hidden_features=in_features*mlp_ratio, out_features=num_joints*num_joints*num_groups)
+
+    def forward(self, input_features, adj):
+        x = torch.mean(input_features, dim=2) if len(input_features.shape) > 3 else input_features # average over sequence dimension
+        modulation = self.mlp(x)
+        modulation = rearrange(modulation, 'b t (j1 j2 g) -> b t g j1 j2', g=self.num_groups, j1=self.num_joints, j2=self.num_joints)
+        affinity = modulation + adj
+
+        return affinity
+
+
+class AffinityGCN(nn.Module):
+    def __init__(self, in_frames, in_features, out_features, num_groups=3, dropout=0):
+        super(AffinityGCN, self).__init__()
+
+        self.in_features = in_features
+        self.out_features = out_features
+        self.in_frames = in_frames
+        self.dropout = dropout
+        self.num_groups = num_groups
+
+        self.weight = nn.Parameter(torch.FloatTensor(in_features, self.num_groups * out_features))
+        self.bias = nn.Parameter(torch.FloatTensor(out_features))
+        self.norm = nn.BatchNorm2d(out_features)
+
+        self.affinity_modulation = FrameAffinityModulation(in_features, 17, num_groups, mlp_ratio=6)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, nonlinearity="relu")
+        nn.init.zeros_(self.bias)
+
+    def forward(self, input_features, adj):
+        B, T, V, _ = input_features.shape
+        support = input_features @ self.weight
+        support = support.reshape(B, T, V, self.num_groups, self.out_features)
+        support = support.transpose(-3, -2)
+
+        affinitiy = self.affinity_modulation(input_features, adj)
+        message_passing = (affinitiy @ support)
+        output = torch.sum(message_passing, dim=-3)
+
+        if self.bias is not None:
+            output = output + self.bias
+
+        output = self.norm(output.transpose(1, -1)).transpose(1, -1)
+        output = F.relu(output)
+        output = F.dropout(output, self.dropout, training=self.training)
+
+        return output
 
 
 class GCN(nn.Module):
@@ -66,7 +161,7 @@ class TCN(nn.Module):
         nn.init.constant_(self.conv.bias, 0)
 
     def forward(self, x):
-        out = F.dropout(self.sigma(self.norm(self.conv(x))), self.dropout, self.training)
+        out = F.dropout(self.sigma(self.conv(self.norm(x))), self.dropout, self.training)
         return out
 
 
@@ -130,7 +225,7 @@ class NodeTCNResidualBlock(nn.Module):
         X = self.gcn(X, adj_v).reshape(-1, self.in_frames, 17, self.nhid_v).transpose(1, -1)
         X = self.tcn(X).transpose(1, -1).reshape(B, T, J, self.nhid_v)
 
-        X = F.relu(X + residual_X)
+        X = X + residual_X
 
         return X
 
@@ -365,8 +460,10 @@ class STGConv(nn.Module):
                  learn_adj=True):
         super(STGConv, self).__init__()
 
-        self.adj_v = nn.Parameter(adj_v.clone().detach(), requires_grad=learn_adj)
-        self.adj_e = nn.Parameter(adj_e.clone().detach(), requires_grad=learn_adj)
+        # self.adj_v = nn.Parameter(adj_v.clone().detach(), requires_grad=learn_adj)
+        # self.adj_e = nn.Parameter(adj_e.clone().detach(), requires_grad=learn_adj)
+        self.adj_v = adj_v
+        self.adj_e = adj_e
         self.T = T
 
         self.frame_length = gcn_window

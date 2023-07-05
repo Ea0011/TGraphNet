@@ -808,6 +808,7 @@ class ChunkedGenerator_Seq2Seq:
                                 self.batch_3d[i, :, self.joints_right + self.joints_left]
 
                     if self.cameras is not None:
+                        self.batch_cam[i] = self.cameras[seq_i]
                         if flip:
                             self.batch_cam[i, 2] *= -1
                             self.batch_cam[i, 7] *= -1
@@ -823,6 +824,10 @@ class ChunkedGenerator_Seq2Seq:
                 else:
                     yield self.batch_cam[:len(chunks)].copy(), self.batch_3d[:len(chunks)].copy(), None, self.batch_2d[:len(chunks)].copy(), None
 
+            if self.endless:
+                self.state = None
+            else:
+                enabled = False
 if __name__ == "__main__":
     seq_2d = torch.randn((500, 17, 2))
     seq_3d = torch.randn((500, 17, 3))

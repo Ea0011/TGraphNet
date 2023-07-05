@@ -221,3 +221,18 @@ def mean_velocity_error(predicted, target, axis=0):
     velocity_target = torch.diff(target, dim=axis)
 
     return torch.mean(torch.norm(velocity_predicted - velocity_target, dim=len(target.shape)-1))
+
+
+def t_mpjpe(predicted, target):
+    """
+    Mean per-joint position error (i.e. mean Euclidean distance),
+    often referred to as "Protocol #1" in many papers.
+    returns mean error across all data points
+    and mean per joint error 17 x 1
+    """
+    assert predicted.shape == target.shape
+    errors = torch.norm(predicted - target, dim=len(target.shape)-1)
+    # errors: [B, T, N]
+    errors = rearrange(errors, 'B T N -> T (B N)')
+    errors = torch.mean(errors, dim=-1)
+    return torch.mean(torch.norm(predicted - target, dim=len(target.shape)-1)), errors

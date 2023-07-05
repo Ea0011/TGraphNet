@@ -68,7 +68,7 @@ def mean_diff_loss(predicted, weight):
     return dif_seq
 
 
-def motion_loss(predicted, target, intervals=[12], operator=torch.cross):
+def motion_loss(predicted, target, intervals=[8, 12, 16, 24], operator=torch.cross):
     assert predicted.shape == target.shape
     loss = 0
     for itv in intervals:

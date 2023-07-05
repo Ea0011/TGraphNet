@@ -5,7 +5,7 @@ import scipy.io as sio
 # import cv2
 from angles import *
 from common.h36m_skeleton import *
-from common.camera_params import h36m_cameras_intrinsic_params, normalize_screen_coordinates
+from common.camera_params import h36m_cameras_intrinsic_params, normalize_screen_coordinates, project_to_2d_linear, project_to_2d, normalize_screen_coordinates_torch
 from data.generators import ChunkedGenerator_Seq, ChunkedGenerator_Frame, ChunkedGenerator_Seq2Seq
 
 
@@ -121,7 +121,7 @@ class Human36M:
         return data, sub_actions
 
     def load_cpn_detection(self, cpn_file="data_2d_h36m_cpn_ft_h36m_dbb.npz", disp=False):
-        keypoints = np.load("../data/" + cpn_file, allow_pickle=True)
+        keypoints = np.load("/media/HDD3/datasets/Human3.6M/" + cpn_file, allow_pickle=True)
         keypoints = keypoints['positions_2d'].item() # a nested dict with Subject->Action
 
         # Check for >= instead of == because some videos in H3.6M contain extra frames
@@ -364,8 +364,8 @@ class Human36M:
                     cam_params[k] = np.array(v, dtype=np.float32)
             
             # Normalize camera frame
-            cam_params['center'] = normalize_screen_coordinates(cam_params['center'], w=cam_params['res_w'], h=cam_params['res_h']).astype('float32')
-            cam_params['focal_length'] = cam_params['focal_length']/cam_params['res_w']*2
+            # cam_params['center'] = normalize_screen_coordinates(cam_params['center'], w=cam_params['res_w'], h=cam_params['res_h']).astype('float32')
+            # cam_params['focal_length'] = cam_params['focal_length']/cam_params['res_w']*2
 
             cam_intrinsics = np.concatenate((
                 cam_params['focal_length'],
@@ -416,18 +416,27 @@ if __name__ == "__main__":
     from time import strftime, gmtime
 
     start = time.time()
-    train_dataset = Human36M(data_dir="../../Human3.6m", train=False, ds_category="gt",)
+    train_dataset = Human36M(data_dir="/media/HDD3/datasets/Human3.6M/pose_zip", train=True, ds_category="cpn",)
     pos2d, pos3d, angles_6d, edge_features, cameras = train_dataset.pos2d, train_dataset.pos3d_centered, train_dataset.gt_angles_6d, train_dataset.edge_features, train_dataset.cam
 
     # gen = ChunkedGenerator_Frame(256, cameras=cameras, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-    #                                              edge_feat=edge_features, chunk_length=81, pad=0, shuffle=True,)
+    #                                              edge_feat=edge_features, chunk_length=81, pad=0, shuffle=False,)
 
-    gen = ChunkedGenerator_Seq2Seq(128, cameras, pos3d, pos2d, chunk_length=11, pad=35, out_all=True, shuffle=False)
+    kps_left, kps_right = [4, 5, 6, 11, 12, 13], [1, 2, 3, 14, 15, 16]
+
+    gen = ChunkedGenerator_Seq2Seq(128, cameras, pos3d, pos2d, chunk_length=11, pad=35, out_all=True, shuffle=False,
+                                                    augment=False, reverse_aug=False,
+                                                    kps_left=kps_left, kps_right=kps_right,
+                                                    joints_left=kps_left,
+                                                    joints_right=kps_right)
     print(f"N Frames: {gen.num_frames()}, N Batches {gen.num_batches}")
-    for cam, batch_3d, batch_2d in gen.next_epoch():
-        print("2D", batch_2d[0, :, 0, 0].reshape(-1), "3D", batch_3d[0].reshape(-1), "cam", cam)
-        print(batch_3d[0])
-        print(batch_2d.shape, batch_3d.shape, cam.shape)
-        break
+    for cam, batch_3d, batch_6d, batch_2d, batch_edge in gen.next_epoch():
+        cam = torch.from_numpy(cam.astype('float32')).cuda()
+        batch_3d = torch.FloatTensor(batch_3d).cuda()
+        traj = batch_3d[:, :, :1].clone()
+        batch_3d[:, :, 0] = 0
+        prj = project_to_2d((batch_3d + traj) / 1000, cam)
+        prj_norm = normalize_screen_coordinates_torch(prj, 1000, 1000)
+        print(torch.mean(torch.norm(prj_norm - torch.from_numpy(batch_2d).cuda(), dim=3)))
 
     print("Elapsed time: ", strftime("%H:%M:%S", gmtime(time.time() - start)))

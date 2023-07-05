@@ -83,7 +83,7 @@ def train(model, optimizer, loss_fn, train_gen, metrics, params, epoch, writer, 
         # predicted_angle_mat = rot6d_to_rotmat(predicted_angle_6d)
         # batch_angles_mat = rot6d_to_rotmat(batch_angles_6d)
 
-        loss_pos = loss_fn[0](predicted_pos3d, target_pose_3d)
+        loss_pos = loss_fn[0](predicted_pos3d / 1000, target_pose_3d / 1000)
         # loss_angle = loss_fn[1](predicted_angle_mat, batch_angles_mat)
 
         loss_train = loss_pos  # + params.lambda_angle * loss_angle
@@ -480,7 +480,7 @@ def main():
         # train_generator = ChunkedGenerator_Seq(params.batch_size//params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
         #                                        edge_feat=edge_features, chunk_length=params.in_frames, pad=0, shuffle=True,)
         train_generator = ChunkedGenerator_Frame(params.batch_size // params.stride, cameras=None, poses_2d=pos2d, poses_3d=pos3d, rot_6d=angles_6d,
-                                                 edge_feat=edge_features, chunk_length=11, pad=35, shuffle=True,)
+                                                 edge_feat=edge_features, chunk_length=5, pad=38, shuffle=True,)
 
         logging.info(f"N Frames: {train_generator.num_frames()}, N Batches {train_generator.num_batches}")
         logging.info("- done.")
