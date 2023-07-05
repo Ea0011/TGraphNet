@@ -66,3 +66,14 @@ def mean_diff_loss(predicted, weight):
     dif_seq = torch.mean(torch.multiply(weights_joints, torch.square(dif_seq)))
 
     return dif_seq
+
+
+def motion_loss(predicted, target, intervals=[12], operator=torch.cross):
+    assert predicted.shape == target.shape
+    loss = 0
+    for itv in intervals:
+        pred_encode = operator(predicted[:, :-itv], predicted[:, itv:], dim=3)
+        target_encode = operator(target[:, :-itv], target[:, itv:], dim=3)
+        loss += torch.mean(torch.abs(pred_encode - target_encode)) / len(intervals)
+
+    return loss
