@@ -1,10 +1,20 @@
 # TGraphNet: Exploiting Spatio-Temporal Relationshipts for 3D Pose with Graph Neural Networks
 
-***
+This repo contains the implementation of TGraphNet, a spatio-temporal graph convolutional neural network for sequence to sequence 3D pose estimation from videos. A detailed report about TGraphNet and general human pose estimation can be found at the root of the repository.  
 
-This repo contains the implementation of TGraphNet, a spatio-temporal graph convolutional neural network for sequence to sequence 3D pose estimation from videos. A detailed report about TGraphNet and general human pose estimation can be found at the root of the repository.
+<div align="center">
+  <img src="https://github.com/Ea0011/TGraphNet/blob/main/reports/demo/walking_cam3.gif" height="400" width="45%" />
+  <img src="https://github.com/Ea0011/TGraphNet/blob/main/reports/demo/sittingdown_cam3.gif" height="400" width="45%" />
+  <p>
+    <em>Ground truth 3D poses is on the left. Reconstruction is on the right</em>
+  </p>
+</div>
 
 ## TGraphNet
+
+<div align="center">
+  <img src="https://github.com/Ea0011/TGraphNet/blob/main/reports/diagrams/architecture.png" height="90%" width="90%" />
+</div>
 
 TGraphNet is a U-Shaped spatial-temporal graph convolutional network that estimates 3D pose sequence from an input video. It is a 2-stage model, meaning that first a sequence of 2D postures are created from the video, then 2D poses are lifted to 3D poses by TGraphNet.  
 As a U-Shaped network, TGraphNet downsamples and upsamples the input sequence for global temporal feature extraction. To exploit relational features of the input 2D poses, TGraphNet utilizes a non-uniform graph convolutions with learnable affinity matrices.
