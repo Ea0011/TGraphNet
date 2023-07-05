@@ -77,6 +77,17 @@ joint_to_edge_mapping = {
     'RElbow': ['RElbow', 'RWrist'],
     'RWrist': ['RWrist']        
 }
+edge_parents = {
+    'RHip': 'root', 'RKnee': 'RHip', 'RFoot': 'RKnee', 'LHip': 'root', 'LKnee': 'LHip', 'LFoot': 'LKnee',
+    'Spine': 'root', 'Thorax': 'Spine','Neck': 'Thorax','Head': 'Neck',
+    'LShoulder': 'Thorax','LElbow': 'LShoulder','LWrist': 'LElbow',
+    'RShoulder': 'Thorax','RElbow': 'RShoulder', 'RWrist': 'RElbow'
+}
+
+joint_id_to_names = dict(zip(range(len(joint_names)), joint_names))
+joint_name_to_id = {joint: i for i, joint in enumerate(joint_names)}
+edge_id_to_names = dict(zip(range(len(edge_names)), edge_names))
+edge_name_to_id = {edge: i for i, edge in enumerate(edge_names)}
 
 
 def get_node_names(num_frames=3):
