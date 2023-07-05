@@ -9,11 +9,12 @@ def plot_adjacency_matrix(A, num_frames=3, annotate_frames=True, annotate_values
         A,
         xticklabels=node_names,
         yticklabels=node_names,
-        cmap="Blues",
+        cmap="coolwarm",
         linecolor='gray',
         cbar=None,
         linewidth=.5,
         annot=annotate_values,
+        robust=True,
         square=True)
 
     if annotate_neighbour:
@@ -29,6 +30,24 @@ def plot_adjacency_matrix(A, num_frames=3, annotate_frames=True, annotate_values
         for i in range(num_frames):
             frame = (i * num_nodes)
             ax.add_patch(Rectangle((frame, frame), num_nodes, num_nodes, edgecolor='darkorange', lw=4, clip_on=False, fill=False))
+
+    plt.show()
+
+
+def plot_adjacency_matrix_cluster(A, num_frames=3, annotate_frames=True, annotate_values=False, annotate_neighbour=False, node_names=[], num_nodes=17):
+    sns.clustermap(
+        A,
+        xticklabels=node_names,
+        yticklabels=node_names,
+        cmap="coolwarm",
+        linecolor='gray',
+        # cbar=None,
+        linewidth=.5,
+        annot=annotate_values,
+        robust=True,
+        square=True,
+        figsize=(24, 24),
+        method="complete")
 
     plt.show()
 

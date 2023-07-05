@@ -186,13 +186,11 @@ class TGraphNetSeq(nn.Module):
         self.n_nodes = 17 * gcn_window[0]
         self.n_edges = 16 * gcn_window[0]
         self.num_groups = num_groups
-
-        self.pre = GCNodeEdgeModule(in_frames, infeat_v, infeat_e, nhid_v[0][0], nhid_e[0][0], dropout=0) if use_edge_conv else GCN(in_frames, infeat_v, nhid_v[0][0], num_groups=num_groups, dropout=0)
         self.downsample_layers = nn.ModuleList()
         self.upsample_layers = nn.ModuleList()
         self.merging_layers = nn.ModuleList()
 
-        self.post_node = nn.Conv2d(nhid_v[0][0], 3, kernel_size=(1, 5), stride=1, padding="same")
+        self.post_node = nn.Conv2d(nhid_v[0][1], 3, kernel_size=(1, 5), stride=1, padding="same")
 
         n_stages = len(nhid_v)
         for i in range(n_stages):
@@ -221,7 +219,7 @@ class TGraphNetSeq(nn.Module):
                     learn_adj=learn_adj),
                 )
 
-        for i in range(n_stages):
+        for i in range(n_stages - 1):
             g = Graph(17, 16, gcn_window[i], norm=True)()
             adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
             # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
@@ -235,7 +233,7 @@ class TGraphNetSeq(nn.Module):
                         adj_e=adj_e.to(device),
                         adj_v=adj_v.to(device),
                         T=T.to(device),
-                        n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[-(i + 1)]),
+                        n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[-(i + 2)]),
                         gcn_window=self.gcn_window[i],
                         tcn_window=self.tcn_window[i],
                         num_groups=self.num_groups,
@@ -248,24 +246,24 @@ class TGraphNetSeq(nn.Module):
                         learn_adj=learn_adj
                     ),
                     nn.Upsample(scale_factor=(1, self.tcn_window[-(i + 1)]), mode='bilinear', align_corners=True),
-                    ))
+                ))
             )
 
-        for i in range(n_stages):
+        for i in range(n_stages - 1):
             g = Graph(17, 16, gcn_window[i], norm=True)()
             adj_v, adj_e, T = torch.stack((g['adj_v_root'], g['adj_v_close'], g['adj_v_further'], g['adj_v_sym'])), g['adj_e_wtemp'], g['ne_mapping']
             # adj_v, adj_e, T = torch.stack((g['adj_v'], g['adj_v_back'], g['adj_v_back'])), g['adj_e_wtemp'], g['ne_mapping']
             self.merging_layers.append(
                 nn.ModuleList((
                     STGConv(
-                        nin_v=nhid_v[-(i+1)][1],
-                        nin_e=nhid_e[-(i+1)][1],
-                        nhid_v=nhid_v[0][0],
-                        nhid_e=nhid_e[0][0],
+                        nin_v=nhid_v[-(i+2)][1],
+                        nin_e=nhid_e[-(i+2)][1],
+                        nhid_v=nhid_v[0][1],
+                        nhid_e=nhid_e[0][1],
                         adj_e=adj_e.to(device),
                         adj_v=adj_v.to(device),
                         T=T.to(device),
-                        n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[-(i + 1)]),
+                        n_in_frames=(self.in_frames // np.cumprod([1] + self.tcn_window)[-(i + 2)]),
                         gcn_window=self.gcn_window[i],
                         tcn_window=self.tcn_window[i],
                         num_groups=self.num_groups,
@@ -277,15 +275,15 @@ class TGraphNetSeq(nn.Module):
                         aggregate=False,
                         learn_adj=learn_adj
                     ),
-                    nn.Upsample(scale_factor=(1, np.cumprod([1] + self.tcn_window)[-(i + 1)]), mode='bilinear', align_corners=True),
-                    ))
+                    nn.Upsample(scale_factor=(1, np.cumprod([1] + self.tcn_window)[-(i + 2)]), mode='bilinear', align_corners=True),
+                ))
             )
 
         self.post_merge = STGConv(
-            nin_v=nhid_v[0][0],
-            nin_e=nhid_e[0][0],
-            nhid_v=nhid_v[0][0],
-            nhid_e=nhid_e[0][0],
+            nin_v=nhid_v[0][1],
+            nin_e=nhid_e[0][1],
+            nhid_v=nhid_v[0][1],
+            nhid_e=nhid_e[0][1],
             adj_e=adj_e.to(device),
             adj_v=adj_v.to(device),
             T=T.to(device),
@@ -301,7 +299,7 @@ class TGraphNetSeq(nn.Module):
             aggregate=False,
             learn_adj=learn_adj
         )
-        self.merge_norm = nn.BatchNorm2d(nhid_v[0][0])
+        self.merge_norm = nn.BatchNorm2d(nhid_v[0][1])
 
     def forward(self, X, Z=None):
         if self.use_edge_conv:
@@ -324,29 +322,27 @@ class TGraphNetSeq(nn.Module):
 
             return X.view(batch_size, 17, -1), Z
         else:
-            downsample_out = [None] * (len(self.downsample_layers))  # create buffer to hold features
-            merging_out = [None] * (len(self.upsample_layers))
+            downsample_out = [None] * (len(self.downsample_layers) - 1)  # create buffer to hold features
+            merging_out = [None] * (len(self.merging_layers))
+
             X = X.reshape(-1, self.seq_len, self.n_nodes, self.infeat_v)
-            X = self.pre(X, self.adj_v)
-            X_down = X
 
             for s in range(len(self.downsample_layers) - 1):
-                downsample_out[s], X_down, _ = self.downsample_layers[s](X_down)
+                downsample_out[s], X, _ = self.downsample_layers[s](X)
 
-            downsample_out[-1], X, _ = self.downsample_layers[-1](X_down)
-            merging_out[0], _, _ = self.merging_layers[0][0](X)
-            merging_out[0] = self.merging_layers[0][1](merging_out[0].transpose(1, -1)).transpose(1, -1)
+            _, X, _ = self.downsample_layers[-1](X)
 
             for s in range(len(self.upsample_layers)):
                 skip = downsample_out[-(s + 1)]
                 X, _, _ = self.upsample_layers[s][0](X)
 
+                # Save for merging stage
+                merging_out[s], _, _ = self.merging_layers[s][0](X)
+                merging_out[s] = self.merging_layers[s][1](merging_out[s].transpose(1, -1)).transpose(1, -1)
+
+                # Upsample and add the skip connection
                 X = self.upsample_layers[s][1](X.transpose(1, -1)).transpose(1, -1)
                 X = X + skip
-
-                if s < len(self.upsample_layers) - 1:
-                    merging_out[s + 1], _, _ = self.merging_layers[s + 1][0](X)
-                    merging_out[s + 1] = self.merging_layers[s + 1][1](merging_out[s + 1].transpose(1, -1)).transpose(1, -1)
 
             for f in merging_out:
                 X = X + f
